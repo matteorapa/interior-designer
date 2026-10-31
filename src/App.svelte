@@ -1,11 +1,11 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import {
-    Armchair, ArrowUpRight, Bath, BedDouble, BookOpen, Check, ChevronDown, CircleHelp, Coffee, CookingPot,
-    Download, DoorClosed, Flower2, Grid2X2, LampFloor, Laptop, Magnet, Maximize, MousePointer2, Pencil,
-    Plus, Redo2, Ruler, Search, Settings2, Sofa, Trash2, Undo2, Upload, UtensilsCrossed, X, ZoomIn, ZoomOut
+    ArrowUpRight, Check, ChevronDown, CircleHelp, Download, Grid2X2, Magnet, Maximize,
+    MousePointer2, Pencil, Plus, Redo2, Ruler, Search, Settings2, Sofa, Trash2, Undo2,
+    Upload, X, ZoomIn, ZoomOut
   } from '@lucide/svelte';
-  import { defaultColors, furnitureColors, furnitureInfo, furnitureMarkup, furniturePatterns, furnitureTypes, type Furniture, type FurniturePattern, type FurnitureType } from './furniture';
+  import { defaultColors, furnitureCategories, furnitureColors, furnitureInfo, furnitureMarkup, furniturePatterns, furnitureTypes, type Furniture, type FurniturePattern, type FurnitureType } from './furniture';
   import { closedRoomPolygons, flooringDefs, flooringInfo, flooringTypes, type FlooringType } from './flooring';
 
   type Vertex = { id: string; x: number; y: number };
@@ -39,7 +39,6 @@
 
   const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
   const uid = () => Math.random().toString(36).slice(2, 10);
-  const furnitureIcons = { sofa: Sofa, dining: UtensilsCrossed, island: CookingPot, bed: BedDouble, armchair: Armchair, plant: Flower2, 'coffee-table': Coffee, desk: Laptop, bookshelf: BookOpen, wardrobe: DoorClosed, bathtub: Bath, 'floor-lamp': LampFloor };
   let plan = $state<Plan>(clone(initialPlan));
   let tool = $state<'select' | 'wall' | 'furniture'>('select');
   let selectedWallId = $state<string | null>(null);
@@ -48,6 +47,7 @@
   let paletteDrag = $state<{ type: FurnitureType; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
   let showFurnitureDrawer = $state(false);
   let furnitureQuery = $state('');
+  let furnitureCategory = $state<(typeof furnitureCategories)[number]>('All');
   let showSettings = $state(false);
   let showInspector = $state(true);
   let drawStart = $state<DrawStart | null>(null);
@@ -73,7 +73,10 @@
 
   let selectedWall = $derived(plan.walls.find((wall) => wall.id === selectedWallId));
   let selectedFurniture = $derived(plan.furniture.find((item) => item.id === selectedFurnitureId));
-  let matchingFurniture = $derived(furnitureTypes.filter((type) => furnitureInfo[type].label.toLowerCase().includes(furnitureQuery.trim().toLowerCase())));
+  let matchingFurniture = $derived(furnitureTypes.filter((type) => {
+    const query = furnitureQuery.trim().toLowerCase();
+    return query ? furnitureInfo[type].label.toLowerCase().includes(query) : furnitureCategory === 'All' || furnitureInfo[type].category === furnitureCategory;
+  }));
   let floorPolygons = $derived(closedRoomPolygons(plan.vertices, plan.walls));
   let totalLength = $derived(plan.walls.reduce((sum, wall) => {
     const a = vertex(wall.from), b = vertex(wall.to);
@@ -566,8 +569,12 @@
         </svg>
         {#if showFurnitureDrawer}
           <div class="floating-popover furniture-popover">
-            <div class="popover-heading"><div><strong>Add furniture</strong><span>Drag onto the plan or click to place</span></div><button type="button" aria-label="Close furniture picker" onclick={() => showFurnitureDrawer = false}><X size={16}/></button></div>
-            <label class="furniture-search"><Search size={16}/><input type="search" aria-label="Search furniture" placeholder="Search furniture..." bind:value={furnitureQuery}/></label>
+            <div class="furniture-picker-controls">
+              <div class="popover-heading"><div><strong>Add furniture</strong><span>Drag onto the plan or click to place</span></div><button type="button" aria-label="Close furniture picker" onclick={() => showFurnitureDrawer = false}><X size={16}/></button></div>
+              <label class="furniture-search"><Search size={16}/><input type="search" aria-label="Search furniture" placeholder="Search all furniture..." bind:value={furnitureQuery}/></label>
+              <div class="furniture-categories" role="group" aria-label="Furniture rooms">{#each furnitureCategories as category}<button type="button" class:active={furnitureCategory === category && !furnitureQuery.trim()} aria-pressed={furnitureCategory === category && !furnitureQuery.trim()} onclick={() => { furnitureCategory = category; furnitureQuery = ''; }}>{category}</button>{/each}</div>
+            </div>
+            <div class="furniture-result-count">{matchingFurniture.length} {matchingFurniture.length === 1 ? 'item' : 'items'}{furnitureQuery.trim() ? ' found' : furnitureCategory === 'All' ? ' in catalog' : ` in ${furnitureCategory.toLowerCase()}`}</div>
             <div class="furniture-choices">
               {#each matchingFurniture as type}
                 {@const info = furnitureInfo[type]}

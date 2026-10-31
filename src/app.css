@@ -88,3 +88,15 @@
 .furniture-identity-picture{width:32px;height:28px;flex:none;overflow:visible}
 .furniture-drag-picture{width:34px;height:28px;overflow:visible}
 @media(max-width:420px){.furniture-choices button{height:92px}.furniture-choice-picture{height:55px}}
+
+.furniture-picker-controls{position:sticky;top:-14px;z-index:2;margin:-14px -14px 0;padding:14px 14px 10px;background:#fff;border-bottom:1px solid #edf2ed}
+.furniture-picker-controls .furniture-search{margin-bottom:10px}
+.furniture-categories{display:flex;gap:5px;overflow-x:auto;scrollbar-width:none}
+.furniture-categories::-webkit-scrollbar{display:none}
+.furniture-categories button{flex:none;height:27px;padding:0 9px;border:1px solid #e4ebe4;border-radius:7px;background:#f8faf8;color:#708575;font-size:10px;font-weight:700}
+.furniture-categories button.active{border-color:#95c6a5;background:#eaf5ec;color:#247551}
+.furniture-result-count{margin:10px 1px 8px;color:#91a294;font-size:10px;font-weight:700}
+.furniture-choices button{gap:3px}
+.furniture-choices button>span{display:grid;place-items:center;min-height:25px;line-height:1.15;white-space:normal;font-size:10px}
+.furniture-choice-picture{height:57px}
+@media(max-width:420px){.furniture-choices button>span{font-size:9px}.furniture-choice-picture{height:51px}}

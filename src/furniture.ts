@@ -1,44 +1,85 @@
-export const furnitureTypes = ['sofa', 'dining', 'island', 'bed', 'armchair', 'plant', 'coffee-table', 'desk', 'bookshelf', 'wardrobe', 'bathtub', 'floor-lamp'] as const;
-export type FurnitureType = typeof furnitureTypes[number];
+import { furnitureInfo, furnitureTypes, type FurnitureType } from './furnitureCatalog';
+export { furnitureInfo, furnitureTypes, furnitureCategories } from './furnitureCatalog';
+export type { FurnitureType, FurnitureCategory } from './furnitureCatalog';
+
 export const furniturePatterns = ['solid', 'stripes', 'dots', 'check'] as const;
 export type FurniturePattern = typeof furniturePatterns[number];
 export type Furniture = { id: string; type: FurnitureType; x: number; y: number; rotation: number; scale: number; color?: string; pattern?: FurniturePattern };
 export const furnitureColors = ['#b9d3c0', '#d8be94', '#d3a69b', '#adc1d9', '#d9d1bf', '#8b9f92', '#8f8b9f', '#454f4b'];
 
-export const furnitureInfo: Record<FurnitureType, { label: string; width: number; height: number }> = {
-  sofa: { label: 'Sofa', width: 170, height: 82 }, dining: { label: 'Dining table', width: 148, height: 122 },
-  island: { label: 'Kitchen island', width: 148, height: 78 }, bed: { label: 'Bed', width: 142, height: 170 },
-  armchair: { label: 'Armchair', width: 84, height: 88 }, plant: { label: 'Plant', width: 64, height: 64 },
-  'coffee-table': { label: 'Coffee table', width: 112, height: 66 }, desk: { label: 'Desk', width: 138, height: 70 },
-  bookshelf: { label: 'Bookshelf', width: 112, height: 45 }, wardrobe: { label: 'Wardrobe', width: 120, height: 72 },
-  bathtub: { label: 'Bathtub', width: 145, height: 76 }, 'floor-lamp': { label: 'Floor lamp', width: 58, height: 58 }
+const categoryColors = { Living: '#b9d3c0', Kitchen: '#d8be94', Bedroom: '#c5d6c8', Bathroom: '#c4dcd9' };
+const originalColors: Partial<Record<FurnitureType, string>> = {
+  island: '#b5cec3', plant: '#87b786', 'coffee-table': '#c8ab83', desk: '#c7ad88',
+  bookshelf: '#bfa481', wardrobe: '#c5ad89', 'floor-lamp': '#e1c99b'
 };
+export const defaultColors = Object.fromEntries(furnitureTypes.map((type) => [type, originalColors[type] ?? categoryColors[furnitureInfo[type].category]])) as Record<FurnitureType, string>;
 
-export const defaultColors: Record<FurnitureType, string> = {
-  sofa: '#b9d3c0', dining: '#d8be94', island: '#b5cec3', bed: '#c5d6c8',
-  armchair: '#b9d3c0', plant: '#87b786', 'coffee-table': '#c8ab83',
-  desk: '#c7ad88', bookshelf: '#bfa481', wardrobe: '#c5ad89',
-  bathtub: '#c4dcd9', 'floor-lamp': '#e1c99b'
-};
-
-// The same top-view illustration appears in the picker, canvas, and SVG export.
-// Every filled part uses the chosen colour; neutral strokes define its form.
+// Minimal top views shared by the picker, canvas, and SVG export.
+// The selected colour fills every solid part. Neutral strokes describe the shape.
 function baseFurnitureMarkup(type: FurnitureType, surface: string, ink: string): string {
-  const edge = `stroke="${ink}" stroke-opacity=".5" stroke-width="2.5"`;
-  const line = `fill="none" stroke="${ink}" stroke-opacity=".42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
-  switch (type) {
-    case 'sofa': return `<rect x="-84" y="-40" width="168" height="80" rx="15" fill="${surface}" ${edge}/><path d="M-70-25H70M-70-25V27M70-25V27M0-23V28M-70 28H70" ${line}/>`;
-    case 'dining': return `<rect x="-37" y="-60" width="74" height="23" rx="9" fill="${surface}" ${edge}/><rect x="-37" y="37" width="74" height="23" rx="9" fill="${surface}" ${edge}/><rect x="-73" y="-24" width="23" height="48" rx="9" fill="${surface}" ${edge}/><rect x="50" y="-24" width="23" height="48" rx="9" fill="${surface}" ${edge}/><rect x="-47" y="-34" width="94" height="68" rx="23" fill="${surface}" ${edge}/>`;
-    case 'island': return `<rect x="-73" y="-38" width="146" height="76" rx="9" fill="${surface}" ${edge}/><rect x="-61" y="-27" width="122" height="54" rx="5" ${line}/><rect x="-52" y="-18" width="37" height="36" rx="6" ${line}/><circle cx="29" cy="0" r="12" ${line}/>`;
-    case 'bed': return `<rect x="-70" y="-84" width="140" height="168" rx="10" fill="${surface}" ${edge}/><path d="M-60-28H60M-60 72H60" ${line}/><rect x="-57" y="-70" width="51" height="30" rx="8" ${line}/><rect x="6" y="-70" width="51" height="30" rx="8" ${line}/>`;
-    case 'armchair': return `<rect x="-41" y="-43" width="82" height="86" rx="17" fill="${surface}" ${edge}/><path d="M-30-27H30M-28-10V28H28V-10M-30 28H30" ${line}/>`;
-    case 'plant': return `<circle r="31" fill="${surface}" ${edge}/><path d="M0 0Q-21-27-18-24Q-4-28 0 0ZM0 0Q19-27 25-17Q24-5 0 0ZM0 0Q27 17 14 25Q0 25 0 0ZM0 0Q-28 18-25 5Q-14-4 0 0Z" ${line}/><circle r="3" fill="${ink}" fill-opacity=".55"/>`;
-    case 'coffee-table': return `<ellipse rx="55" ry="32" fill="${surface}" ${edge}/><ellipse rx="44" ry="22" ${line}/>`;
-    case 'desk': return `<rect x="-68" y="-34" width="136" height="68" rx="8" fill="${surface}" ${edge}/><rect x="-55" y="-23" width="50" height="34" rx="4" ${line}/><path d="M-51 20H-10M21-18H53M21-9H46" ${line}/>`;
-    case 'bookshelf': return `<rect x="-55" y="-21" width="110" height="42" rx="5" fill="${surface}" ${edge}/><path d="M-46-7H46M-46 8H46M-34-18V-8M-18-18V-8M0-18V-8M18-18V-8M33-18V-8M-28-5V7M-8-5V7M11-5V7M30-5V7" ${line}/>`;
-    case 'wardrobe': return `<rect x="-59" y="-35" width="118" height="70" rx="6" fill="${surface}" ${edge}/><path d="M0-34V34M-10-8V9M10-8V9" ${line}/>`;
-    case 'bathtub': return `<rect x="-71" y="-37" width="142" height="74" rx="30" fill="${surface}" ${edge}/><rect x="-59" y="-26" width="118" height="52" rx="24" ${line}/><circle cx="43" cy="0" r="4" fill="${ink}" fill-opacity=".55"/>`;
-    case 'floor-lamp': return `<circle r="28" fill="${surface}" ${edge}/><circle r="18" ${line}/><circle r="5" fill="${ink}" fill-opacity=".45"/>`;
+  const { width: w, height: h, shape } = furnitureInfo[type];
+  const edge = `stroke="${ink}" stroke-opacity=".52" stroke-width="2.5"`;
+  const line = `fill="none" stroke="${ink}" stroke-opacity=".44" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"`;
+  const rect = (x: number, y: number, width: number, height: number, radius = 6) => `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" fill="${surface}" ${edge}/>`;
+  const outlineRect = (x: number, y: number, width: number, height: number, radius = 5) => `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="${radius}" ${line}/>`;
+  const circle = (x: number, y: number, radius: number) => `<circle cx="${x}" cy="${y}" r="${radius}" fill="${surface}" ${edge}/>`;
+  const outlineCircle = (x: number, y: number, radius: number) => `<circle cx="${x}" cy="${y}" r="${radius}" ${line}/>`;
+  const ellipse = (rx: number, ry: number) => `<ellipse rx="${rx}" ry="${ry}" fill="${surface}" ${edge}/>`;
+  const outlineEllipse = (rx: number, ry: number) => `<ellipse rx="${rx}" ry="${ry}" ${line}/>`;
+  const path = (d: string) => `<path d="${d}" ${line}/>`;
+  const body = (radius = 8) => rect(-w / 2 + 1, -h / 2 + 1, w - 2, h - 2, radius);
+
+  switch (shape) {
+    case 'sofa': return body(14) + path(`M${-w/2+15} ${-h/2+17}H${w/2-15}M${-w/2+15} ${-h/2+17}V${h/2-12}M${w/2-15} ${-h/2+17}V${h/2-12}M0 ${-h/2+18}V${h/2-12}M${-w/2+15} ${h/2-12}H${w/2-15}`);
+    case 'sectional': return `<path d="M${-w/2+2} ${-h/2+2}H${w/2-2}Q${w/2} ${-h/2+2} ${w/2} ${-h/2+15}V${-h/2+68}Q${w/2} ${-h/2+80} ${w/2-12} ${-h/2+80}H${-w/2+70}V${h/2-12}Q${-w/2+70} ${h/2} ${-w/2+58} ${h/2}H${-w/2+12}Q${-w/2} ${h/2} ${-w/2} ${h/2-12}V${-h/2+14}Q${-w/2} ${-h/2+2} ${-w/2+2} ${-h/2+2}Z" fill="${surface}" ${edge}/>` + path(`M${-w/2+15} ${-h/2+18}H${w/2-15}M${-w/2+15} ${-h/2+18}V${h/2-15}M${-w/2+15} ${-h/2+18}V${-h/2+15}M${-w/2+70} ${-h/2+18}V${-h/2+79}M0 ${-h/2+18}V${-h/2+79}M${-w/2+15} ${-h/2+79}H${-w/2+70}`);
+    case 'chaise': return body(20) + outlineRect(-w/2+13, -h/2+11, 35, h-22, 10) + path(`M${-w/2+58} ${-h/2+12}V${h/2-12}M${w/2-19} ${-h/2+12}V${h/2-12}`);
+    case 'armchair': case 'recliner': return body(17) + path(`M${-w/2+12} ${-h/2+16}H${w/2-12}M${-w/2+12} ${-h/2+16}V${h/2-12}H${w/2-12}V${-h/2+16}`) + (shape === 'recliner' ? path(`M${-w/2+15} ${h/2-25}H${w/2-15}`) : '');
+    case 'ottoman': case 'bench': return body(11) + outlineRect(-w/2+9, -h/2+9, w-18, h-18, 7);
+    case 'table-square': case 'table-rectangle': return body(shape === 'table-square' ? 4 : 7) + outlineRect(-w/2+8, -h/2+8, w-16, h-16, 2);
+    case 'table-round': return circle(0, 0, w/2-2) + outlineCircle(0, 0, w/2-11);
+    case 'table-oval': return ellipse(w/2-2, h/2-2) + outlineEllipse(w/2-11, h/2-10);
+    case 'dining-rectangle': case 'dining-square': case 'dining-round': case 'dining-oval': {
+      const chairs = rect(-19, -h/2+2, 38, 19, 8) + rect(-19, h/2-21, 38, 19, 8) + rect(-w/2+2, -17, 19, 34, 8) + rect(w/2-21, -17, 19, 34, 8);
+      const table = shape === 'dining-round' ? circle(0, 0, Math.min(w,h)/2-24) : shape === 'dining-oval' ? ellipse(w/2-25,h/2-22) : rect(-w/2+25,-h/2+24,w-50,h-48,shape === 'dining-square' ? 5 : 15);
+      return chairs + table;
+    }
+    case 'chair': return body(9) + path(`M${-w/2+8} ${-h/2+14}H${w/2-8}`);
+    case 'stool': return circle(0, 0, w/2-2) + outlineCircle(0, 0, w/2-10);
+    case 'island': return body(9) + outlineRect(-w/2+11,-h/2+10,w-22,h-20,4) + outlineRect(-w/2+20,-h/2+18,36,h-36,6) + outlineCircle(w/2-39,0,12);
+    case 'island-l': case 'counter-l': return `<path d="M${-w/2+2} ${-h/2+2}H${w/2-2}V${-h/2+53}H${-w/2+53}V${h/2-2}H${-w/2+2}Z" fill="${surface}" ${edge}/>` + path(`M${-w/2+13} ${-h/2+14}H${w/2-14}M${-w/2+13} ${-h/2+14}V${h/2-14}`);
+    case 'counter': return body(4) + path(`M${-w/2+12} ${-h/2+11}H${w/2-12}`);
+    case 'sink': case 'double-sink': return body(6) + (shape === 'sink' ? outlineRect(-w/2+12,-h/2+11,w-24,h-22,8) + outlineCircle(0,0,3) : outlineRect(-w/2+10,-h/2+10,w/2-15,h-20,8) + outlineRect(5,-h/2+10,w/2-15,h-20,8) + outlineCircle(-w/4,0,3) + outlineCircle(w/4,0,3));
+    case 'cooktop': case 'range': return body(5) + [-1,1].map((x) => [-1,1].map((y) => outlineCircle(x*w*.24,y*h*.22,Math.min(w,h)*.13)).join('')).join('') + (shape === 'range' ? path(`M${-w/2+10} ${h/2-9}H${w/2-10}`) : '');
+    case 'fridge': return body(7) + path(`M0 ${-h/2+3}V${h/2-3}M${-w/2+10} ${-h/2+12}V${h/2-12}M${w/2-10} ${-h/2+12}V${h/2-12}`);
+    case 'dishwasher': case 'oven': case 'microwave': return body(6) + outlineRect(-w/2+9,-h/2+12,w-18,h-24,4) + path(`M${-w/2+10} ${-h/2+7}H${w/2-10}`) + outlineCircle(w/2-14,-h/2+7,2);
+    case 'pantry': case 'wardrobe': return body(6) + path(`M0 ${-h/2+2}V${h/2-2}M-10-8V8M10-8V8`);
+    case 'cart': return body(7) + outlineRect(-w/2+9,-h/2+9,w-18,h-18,4) + circle(-w/2+10,h/2-2,4) + circle(w/2-10,h/2-2,4);
+    case 'bed': return body(10) + path(`M${-w/2+9} ${-h/2+52}H${w/2-9}M${-w/2+9} ${h/2-12}H${w/2-9}`) + (w < 110 ? outlineRect(-w/2+12,-h/2+12,w-24,29,8) : outlineRect(-w/2+12,-h/2+12,(w-30)/2,29,8) + outlineRect(3,-h/2+12,(w-30)/2,29,8));
+    case 'bunk': return body(9) + outlineRect(-w/2+12,-h/2+12,w-24,h/2-19,5) + outlineRect(-w/2+12,7,w-24,h/2-19,5) + path(`M${w/2-14} ${-h/2+8}V${h/2-8}M${w/2-20} -20H${w/2-8}M${w/2-20} 0H${w/2-8}M${w/2-20} 20H${w/2-8}`);
+    case 'crib': return body(10) + Array.from({length:7},(_,i)=>path(`M${-w/2+12+i*(w-24)/6} ${-h/2+9}V${h/2-9}`)).join('');
+    case 'nightstand': return body(5) + path(`M${-w/2+8} 0H${w/2-8}`) + outlineCircle(0,h/4,2);
+    case 'dresser': return body(6) + path(`M${-w/2+8} ${-h/2+18}H${w/2-8}M${-w/2+8} ${h/2-18}H${w/2-8}`) + [-1,0,1].map((i)=>outlineCircle(0,i*h*.28,2)).join('');
+    case 'desk': return body(7) + outlineRect(-w/2+12,-h/2+10,48,h-30,3) + path(`M${w/2-48} ${-h/2+16}H${w/2-13}M${w/2-48} ${-h/2+7}H${w/2-13}`);
+    case 'office-chair': return circle(0,0,w/2-2) + outlineRect(-w/2+10,-h/2+12,w-20,h-24,10) + path(`M${-w/2+13} ${-h/2+15}H${w/2-13}`);
+    case 'vanity': return body(6) + outlineEllipse(w*.22,h*.28) + path(`M${-w/2+10} ${-h/2+9}H${w/2-10}`);
+    case 'mirror': return body(9) + outlineRect(-w/2+7,-h/2+5,w-14,h-10,5);
+    case 'console': return body(5) + path(`M${-w/2+10} 0H${w/2-10}M0 ${-h/2+3}V${h/2-3}`);
+    case 'television': return body(3) + outlineRect(-w/2+6,-h/2+4,w-12,h-8,2);
+    case 'bookshelf': return body(5) + path(`M${-w/2+8} -7H${w/2-8}M${-w/2+8} 7H${w/2-8}`) + [-w*.32,-w*.12,w*.12,w*.32].map(x=>path(`M${x} ${-h/2+5}V${h/2-5}`)).join('');
+    case 'rug-rectangle': return body(6) + outlineRect(-w/2+12,-h/2+12,w-24,h-24,3);
+    case 'rug-round': return circle(0,0,w/2-2) + outlineCircle(0,0,w/2-14);
+    case 'lamp': return circle(0,0,w/2-2) + outlineCircle(0,0,w/2-12) + outlineCircle(0,0,5);
+    case 'plant': return circle(0,0,w/2-2) + path('M0 0Q-20-27-18-23Q-5-26 0 0ZM0 0Q20-27 25-16Q22-4 0 0ZM0 0Q27 16 14 25Q1 23 0 0ZM0 0Q-27 17-24 5Q-12-3 0 0Z') + outlineCircle(0,0,3);
+    case 'fireplace': return body(4) + outlineRect(-w/2+10,-h/2+8,w-20,h-16,3) + path('M-25 7Q-14-10-5 7Q6-13 17 7Q24-3 29 7');
+    case 'bathtub': return body(29) + outlineRect(-w/2+12,-h/2+11,w-24,h-22,23) + outlineCircle(w/2-29,0,4);
+    case 'shower-square': case 'shower-rectangle': return body(5) + outlineRect(-w/2+9,-h/2+9,w-18,h-18,3) + outlineCircle(w/2-21,-h/2+21,7) + path(`M${-w/2+13} ${h/2-17}L${w/2-17} ${-h/2+13}`);
+    case 'toilet': case 'bidet': return rect(-w/2+6,-h/2+2,w-12,21,5) + `<ellipse cy="${h*.13}" rx="${w*.38}" ry="${h*.32}" fill="${surface}" ${edge}/>` + outlineEllipse(w*.28,h*.21);
+    case 'basin': return body(12) + outlineEllipse(w*.34,h*.31) + outlineCircle(0,h*.15,3);
+    case 'vanity-single': case 'vanity-double': return body(5) + (shape === 'vanity-single' ? outlineEllipse(w*.29,h*.29) + outlineCircle(0,0,3) : outlineEllipse(w*.2,h*.29).replace('<ellipse ',`<ellipse cx="${-w*.24}" `) + outlineEllipse(w*.2,h*.29).replace('<ellipse ',`<ellipse cx="${w*.24}" `)) + path(`M${-w/2+10} ${-h/2+8}H${w/2-10}`);
+    case 'cabinet': return body(4) + path(`M0 ${-h/2+2}V${h/2-2}M-9-6V6M9-6V6`);
+    case 'towel-rack': return body(3) + path(`M${-w/2+10} -4H${w/2-10}M${-w/2+10} 4H${w/2-10}`);
+    case 'washer': case 'dryer': return body(5) + outlineCircle(0,3,w*.29) + path(`M${-w/2+8} ${-h/2+10}H${w/2-8}`) + outlineCircle(w/2-13,-h/2+7,2);
+    default: return body();
   }
 }
 

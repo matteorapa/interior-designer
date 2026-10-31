@@ -17,7 +17,7 @@ Open the local URL printed by Vite. Run `npm run check` and `npm run build` to v
 - Use the workspace toolbar above the canvas for **New plan**, **Export**, **Import**, **Undo**, and **Redo**.
 - Choose **Select** (or press `V`) to select walls and drag corners. Set a wall's thickness in the properties panel.
 - Drag an empty part of the canvas to pan. Hold `Space` and drag, or use the middle mouse button, to pan while another tool is active. **Reset view** restores the original zoom and position.
-- Open **Furniture** to search twelve items by name and preview their top-view drawings. Drag an item onto the canvas, or choose it and click the canvas to place it. Select furniture to move, rotate, resize, delete, or change its single base colour and optional pattern in the properties panel.
+- Open **Furniture** to browse 69 items across living room, kitchen, bedroom, and bathroom categories, or search by name. The catalog includes square, round, oval, and rectangular coffee tables alongside other furniture and fixtures. Drag an item onto the canvas, or choose it and click the canvas to place it. Select furniture to move, rotate, resize, delete, or change its single base colour and optional pattern in the properties panel.
 - The canvas spans the editor. **Properties** floats over its right side and can be closed or reopened. Selecting an item opens it automatically.
 - Select a furniture item, then drag the circular handle to rotate it or the corner handle to resize it. Hold `Shift` while rotating to snap to 15° increments. The properties sliders remain available for precise values.
 - Open the **settings cog** to show or hide the grid and dimensions, toggle grid snapping, and choose light or dark wood or tile flooring. Flooring fills enclosed rooms.
