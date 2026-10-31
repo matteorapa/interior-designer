@@ -14,7 +14,7 @@ Open the local URL printed by Vite. Run `npm run check` and `npm run build` to v
 ## Use the editor
 
 - Use the floating toolbar at the bottom of the canvas. Choose **Draw wall** (or press `W`), then click points on the canvas. Hold `Shift` to snap to 15° angles. Click an existing corner to connect a wall to it.
-- Use the workspace toolbar above the canvas for **New plan**, **Export**, **Import**, **Undo**, and **Redo**.
+- Use the workspace toolbar above the canvas for **New plan**, **Export**, **Import**, **Undo**, and **Redo**. New and imported plans open in separate tabs below the toolbar. Switch tabs to move between plans; use the pencil on the active tab to rename it or the × to close it. Each tab has its own undo history, and open plans save in your browser.
 - Choose **Select** (or press `V`) to select walls and drag corners. Set a wall's thickness in the properties panel.
 - Drag an empty part of the canvas to pan. Hold `Space` and drag, or use the middle mouse button, to pan while another tool is active. **Reset view** restores the original zoom and position.
 - Open **Furniture** to browse 69 items across living room, kitchen, bedroom, and bathroom categories, or search by name. The catalog includes square, round, oval, and rectangular coffee tables alongside other furniture and fixtures. Drag an item onto the canvas, or choose it and click the canvas to place it. Select furniture to move, rotate, resize, delete, or change its single base colour and optional pattern in the properties panel.
@@ -24,4 +24,4 @@ Open the local URL printed by Vite. Run `npm run check` and `npm run build` to v
 - Use `Delete` to remove a selected wall or furniture item and `Ctrl/Cmd+Z` to undo. Plans save automatically in your browser.
 - Export an SVG drawing or JSON plan with furniture finishes and flooring. JSON plans can be imported back into the editor.
 
-Coordinates and wall thicknesses are in centimetres. The sample plan includes slanted walls and can be replaced with **New plan**.
+Coordinates and wall thicknesses are in centimetres. The sample plan includes slanted walls and remains available when you open a new plan tab.

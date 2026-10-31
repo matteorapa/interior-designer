@@ -1,8 +1,8 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import {
     ArrowUpRight, Check, ChevronDown, CircleHelp, Download, Grid2X2, Magnet, Maximize,
-    MousePointer2, Pencil, Plus, Redo2, Ruler, Search, Settings2, Sofa, Trash2, Undo2,
+    MessageSquarePlus, MousePointer2, Pencil, Plus, Redo2, Ruler, Search, Settings2, Sofa, Trash2, Undo2,
     Upload, X, ZoomIn, ZoomOut
   } from '@lucide/svelte';
   import { defaultColors, furnitureCategories, furnitureColors, furnitureInfo, furnitureMarkup, furniturePatterns, furnitureTypes, type Furniture, type FurniturePattern, type FurnitureType } from './furniture';
@@ -10,7 +10,9 @@
 
   type Vertex = { id: string; x: number; y: number };
   type Wall = { id: string; from: string; to: string; thickness: number };
-  type Plan = { name: string; vertices: Vertex[]; walls: Wall[]; furniture: Furniture[]; flooring: FlooringType };
+  type PlanComment = { id: string; x: number; y: number; text: string };
+  type Plan = { name: string; vertices: Vertex[]; walls: Wall[]; furniture: Furniture[]; comments: PlanComment[]; flooring: FlooringType };
+  type PlanTab = { id: string; plan: Plan; history: Plan[]; future: Plan[] };
   type DrawStart = { x: number; y: number; vertexId?: string };
 
   const initialPlan: Plan = {
@@ -34,15 +36,22 @@
       { id: 'f1', type: 'sofa', x: 305, y: 265, rotation: 0, scale: 0.85 },
       { id: 'f2', type: 'dining', x: 570, y: 380, rotation: 0, scale: 0.8 },
       { id: 'f3', type: 'island', x: 365, y: 405, rotation: 0, scale: 0.8 }
-    ]
+    ], comments: []
   };
 
   const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
   const uid = () => Math.random().toString(36).slice(2, 10);
-  let plan = $state<Plan>(clone(initialPlan));
-  let tool = $state<'select' | 'wall' | 'furniture'>('select');
+  let planTabs = $state<PlanTab[]>([{ id: 'starter', plan: clone(initialPlan), history: [], future: [] }]);
+  let activeTabId = $state('starter');
+  let editingTabId = $state<string | null>(null);
+  let tabNameDraft = $state('');
+  let activeTab = $derived(planTabs.find((tab) => tab.id === activeTabId) ?? planTabs[0]);
+  let plan = $derived(activeTab.plan);
+  let tool = $state<'select' | 'wall' | 'furniture' | 'comment'>('select');
   let selectedWallId = $state<string | null>(null);
   let selectedFurnitureId = $state<string | null>(null);
+  let commentEditor = $state<{ id: string | null; x: number; y: number; left: number; top: number } | null>(null);
+  let commentDraft = $state('');
   let placementType = $state<FurnitureType>('sofa');
   let paletteDrag = $state<{ type: FurnitureType; startX: number; startY: number; x: number; y: number; moved: boolean } | null>(null);
   let showFurnitureDrawer = $state(false);
@@ -56,8 +65,8 @@
   let draggingFurniture: { id: string; before: Plan; moved: boolean } | null = null;
   let transformingFurniture: { id: string; mode: 'rotate' | 'resize'; before: Plan; startAngle: number; rotation: number; startDistance: number; scale: number; moved: boolean } | null = null;
   let suppressCanvasClick = false;
-  let history = $state<Plan[]>([]);
-  let future = $state<Plan[]>([]);
+  let history = $derived(activeTab.history);
+  let future = $derived(activeTab.future);
   let showGrid = $state(true);
   let snapGrid = $state(true);
   let showDimensions = $state(true);
@@ -99,32 +108,35 @@
   }
   function meters(value: number) { return `${(value / 100).toFixed(2)} m`; }
   function remember() {
-    history = [...history.slice(-49), clone(plan)];
-    future = [];
+    activeTab.history = [...history.slice(-49), clone(plan)];
+    activeTab.future = [];
   }
   function undo() {
     if (!history.length) return;
-    future = [clone(plan), ...future];
-    plan = history.at(-1)!;
-    history = history.slice(0, -1);
+    activeTab.future = [clone(plan), ...future];
+    activeTab.plan = history.at(-1)!;
+    activeTab.history = history.slice(0, -1);
     selectedWallId = null;
     selectedFurnitureId = null;
     drawStart = null;
+    commentEditor = null;
   }
   function redo() {
     if (!future.length) return;
-    history = [...history, clone(plan)];
-    plan = future[0];
-    future = future.slice(1);
+    activeTab.history = [...history, clone(plan)];
+    activeTab.plan = future[0];
+    activeTab.future = future.slice(1);
     selectedWallId = null;
     selectedFurnitureId = null;
     drawStart = null;
+    commentEditor = null;
   }
-  function setTool(next: 'select' | 'wall') {
+  function setTool(next: 'select' | 'wall' | 'comment') {
     tool = next;
     drawStart = null;
     selectedWallId = null;
     selectedFurnitureId = null;
+    commentEditor = null;
     showFurnitureDrawer = false;
     showSettings = false;
   }
@@ -134,6 +146,7 @@
     drawStart = null;
     selectedWallId = null;
     selectedFurnitureId = null;
+    commentEditor = null;
     showFurnitureDrawer = false;
     showSettings = false;
   }
@@ -181,6 +194,45 @@
     const result = point.matrixTransform(svg.getScreenCTM()!.inverse());
     return { x: result.x, y: result.y };
   }
+  function openCommentEditor(point: { x: number; y: number }, id: string | null, text: string, event?: MouseEvent) {
+    const bounds = svg.getBoundingClientRect();
+    const svgPoint = svg.createSVGPoint();
+    svgPoint.x = point.x;
+    svgPoint.y = point.y;
+    const screen = svgPoint.matrixTransform(svg.getScreenCTM()!);
+    const clientX = event?.clientX ?? screen.x;
+    const clientY = event?.clientY ?? screen.y;
+    commentEditor = {
+      id, x: point.x, y: point.y,
+      left: Math.max(8, Math.min(bounds.width - 278, clientX - bounds.left + 14)),
+      top: Math.max(8, Math.min(bounds.height - 205, clientY - bounds.top + 14))
+    };
+    commentDraft = text;
+    selectedWallId = null;
+    selectedFurnitureId = null;
+    showFurnitureDrawer = false;
+    showSettings = false;
+    void tick().then(() => document.querySelector<HTMLTextAreaElement>('.comment-editor textarea')?.focus());
+  }
+  function saveComment() {
+    if (!commentEditor) return;
+    const text = commentDraft.trim();
+    if (!text) return;
+    const existing = commentEditor.id ? plan.comments.find((note) => note.id === commentEditor!.id) : null;
+    if (!existing || existing.text !== text) {
+      remember();
+      if (existing) existing.text = text;
+      else plan.comments.push({ id: uid(), x: Math.round(commentEditor.x), y: Math.round(commentEditor.y), text });
+    }
+    commentEditor = null;
+    tool = 'select';
+  }
+  function deleteComment() {
+    if (!commentEditor?.id) return;
+    remember();
+    plan.comments = plan.comments.filter((note) => note.id !== commentEditor!.id);
+    commentEditor = null;
+  }
   function nearestVertex(point: { x: number; y: number }) {
     return plan.vertices.find((item) => distance(item, point) < 15 / zoom);
   }
@@ -201,8 +253,9 @@
     if (suppressCanvasClick) { suppressCanvasClick = false; return; }
     showFurnitureDrawer = false;
     showSettings = false;
-    if (tool === 'select') { selectedWallId = null; selectedFurnitureId = null; return; }
+    if (tool === 'select') { selectedWallId = null; selectedFurnitureId = null; commentEditor = null; return; }
     if (tool === 'furniture') { addFurniture(placementType, screenPoint(event)); return; }
+    if (tool === 'comment') { openCommentEditor(screenPoint(event), null, '', event); return; }
     const point = constrain(screenPoint(event), event.shiftKey);
     if (!drawStart) { drawStart = point; return; }
     if (distance(drawStart, point) < 8) { drawStart = null; return; }
@@ -278,7 +331,7 @@
       return;
     }
     if (tool === 'wall') cursor = constrain(screenPoint(event), event.shiftKey);
-    else if (tool === 'furniture') cursor = screenPoint(event);
+    else if (tool === 'furniture' || tool === 'comment') cursor = screenPoint(event);
   }
   function startDrag(event: PointerEvent, id: string) {
     if (tool !== 'select') return;
@@ -315,8 +368,8 @@
   function stopDrag(event: PointerEvent) {
     if (panning?.moved) suppressCanvasClick = true;
     if (dragging?.moved || draggingFurniture?.moved || transformingFurniture?.moved) {
-      history = [...history.slice(-49), (dragging ?? draggingFurniture ?? transformingFurniture)!.before];
-      future = [];
+      activeTab.history = [...history.slice(-49), (dragging ?? draggingFurniture ?? transformingFurniture)!.before];
+      activeTab.future = [];
     }
     dragging = null;
     draggingFurniture = null;
@@ -364,6 +417,7 @@
     else selectedFurniture.scale = Math.round(Math.max(0.4, Math.min(2.5, selectedFurniture.scale + direction * 0.05)) * 100) / 100;
   }
   function deleteSelected() {
+    if (commentEditor?.id) { deleteComment(); return; }
     if (selectedFurnitureId) {
       remember();
       plan.furniture = plan.furniture.filter((item) => item.id !== selectedFurnitureId);
@@ -404,14 +458,78 @@
     remember();
     plan.flooring = flooring;
   }
-  function newPlan() {
-    if (!window.confirm('Create a new blank plan? Your current plan will be replaced.')) return;
-    remember();
-    plan = { name: 'Untitled floor plan', vertices: [], walls: [], furniture: [], flooring: 'none' };
+  function clearPlanInteraction() {
     selectedWallId = null;
     selectedFurnitureId = null;
     drawStart = null;
+    cursor = null;
+    commentEditor = null;
+    showFurnitureDrawer = false;
+    showSettings = false;
+    showExport = false;
+    tool = 'select';
+  }
+  function switchPlan(id: string) {
+    if (activeTabId === id || !planTabs.some((tab) => tab.id === id)) return;
+    saveTabName();
+    activeTabId = id;
+    clearPlanInteraction();
+  }
+  async function startRenameTab(id: string) {
+    const tab = planTabs.find((item) => item.id === id);
+    if (!tab) return;
+    editingTabId = id;
+    tabNameDraft = tab.plan.name;
+    await tick();
+    const input = document.getElementById(`plan-name-${id}`) as HTMLInputElement | null;
+    input?.focus();
+    input?.select();
+  }
+  function saveTabName() {
+    if (!editingTabId) return;
+    const tab = planTabs.find((item) => item.id === editingTabId);
+    const name = tabNameDraft.trim();
+    if (tab && name && name !== tab.plan.name) {
+      tab.history = [...tab.history.slice(-49), clone(tab.plan)];
+      tab.future = [];
+      tab.plan.name = name;
+    }
+    editingTabId = null;
+  }
+  function closePlanTab(id: string) {
+    if (planTabs.length === 1) return;
+    saveTabName();
+    const index = planTabs.findIndex((tab) => tab.id === id);
+    if (index < 0) return;
+    const tab = planTabs[index];
+    if ((tab.plan.walls.length || tab.plan.furniture.length || tab.plan.comments.length) && !window.confirm(`Close “${tab.plan.name}”? This removes the plan from your browser.`)) return;
+    const remaining = planTabs.filter((item) => item.id !== id);
+    planTabs = remaining;
+    if (activeTabId === id) {
+      activeTabId = remaining[Math.max(0, index - 1)].id;
+      clearPlanInteraction();
+    }
+  }
+  async function tabKeydown(event: KeyboardEvent, index: number) {
+    const direction = event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0;
+    const nextIndex = event.key === 'Home' ? 0 : event.key === 'End' ? planTabs.length - 1 : direction ? (index + direction + planTabs.length) % planTabs.length : -1;
+    if (nextIndex < 0) return;
+    event.preventDefault();
+    switchPlan(planTabs[nextIndex].id);
+    await tick();
+    document.getElementById(`plan-tab-${planTabs[nextIndex].id}`)?.focus();
+  }
+  function newPlan() {
+    saveTabName();
+    let number = 1;
+    while (planTabs.some((tab) => tab.plan.name === `Untitled plan ${number}`)) number++;
+    const tab: PlanTab = { id: uid(), plan: { name: `Untitled plan ${number}`, vertices: [], walls: [], furniture: [], comments: [], flooring: 'none' }, history: [], future: [] };
+    planTabs = [...planTabs, tab];
+    activeTabId = tab.id;
+    clearPlanInteraction();
     tool = 'wall';
+    zoom = 1;
+    pan = { x: 0, y: 0 };
   }
   function download(content: string, filename: string, type: string) {
     const url = URL.createObjectURL(new Blob([content], { type }));
@@ -426,36 +544,44 @@
     return `${plan.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'floor-plan'}.${ext}`;
   }
   function exportSvg() {
+    const escapeXml = (value: string) => value.replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[character]!);
     const floors = plan.flooring === 'none' ? '' : closedRoomPolygons(plan.vertices, plan.walls).map((points) => `<polygon points="${points}" fill="url(#floor-${plan.flooring})"/>`).join('');
     const lines = plan.walls.map((wall) => {
       const a = vertex(wall.from), b = vertex(wall.to);
       return a && b ? `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#233c38" stroke-width="${wall.thickness}" stroke-linecap="round"/>` : '';
     }).join('');
     const furnishings = plan.furniture.map((item) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${item.scale})">${furnitureMarkup(item.type, item.color, item.pattern, item.id)}</g>`).join('');
-    const image = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="864" viewBox="0 0 1000 720"><defs>${flooringDefs}</defs><rect width="1000" height="720" fill="#fffefb"/>${floors}${lines}${furnishings}</svg>`;
+    const notes = plan.comments.map((note, index) => `<g transform="translate(${note.x} ${note.y})"><circle r="13" fill="#fff" stroke="#278060" stroke-width="2"/><text y="4" text-anchor="middle" font-family="sans-serif" font-size="10" font-weight="700" fill="#278060">${index + 1}</text><rect x="19" y="-12" width="155" height="24" rx="5" fill="#fff" stroke="#d7e6da"/><text x="27" y="4" font-family="sans-serif" font-size="10" fill="#365644">${escapeXml(note.text.replace(/\s+/g, ' ').slice(0, 25))}</text></g>`).join('');
+    const image = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="864" viewBox="0 0 1000 720"><defs>${flooringDefs}</defs><rect width="1000" height="720" fill="#fffefb"/>${floors}${lines}${furnishings}${notes}</svg>`;
     download(image, filename('svg'), 'image/svg+xml');
   }
   function exportJson() { download(JSON.stringify(plan, null, 2), filename('json'), 'application/json'); }
+  function normalizePlan(value: unknown): Plan | null {
+    if (!value || typeof value !== 'object') return null;
+    const candidate = value as Partial<Plan>;
+    if (typeof candidate.name !== 'string' || !Array.isArray(candidate.vertices) || !Array.isArray(candidate.walls) ||
+      !candidate.vertices.every((point) => typeof point.id === 'string' && Number.isFinite(point.x) && Number.isFinite(point.y)) ||
+      !candidate.walls.every((wall) => typeof wall.id === 'string' && typeof wall.from === 'string' && typeof wall.to === 'string' && Number.isFinite(wall.thickness)) ||
+      !candidate.walls.every((wall) => candidate.vertices!.some((point) => point.id === wall.from) && candidate.vertices!.some((point) => point.id === wall.to)) ||
+      (candidate.flooring !== undefined && !flooringTypes.includes(candidate.flooring)) ||
+      (candidate.comments !== undefined && (!Array.isArray(candidate.comments) || !candidate.comments.every((note) =>
+        typeof note.id === 'string' && Number.isFinite(note.x) && Number.isFinite(note.y) && typeof note.text === 'string' && note.text.length <= 500))) ||
+      (candidate.furniture !== undefined && (!Array.isArray(candidate.furniture) || !candidate.furniture.every((item) =>
+        typeof item.id === 'string' && furnitureTypes.includes(item.type) && Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.rotation) && Number.isFinite(item.scale) && item.scale > 0 &&
+        (item.color === undefined || /^#[0-9a-f]{6}$/i.test(item.color)) && (item.pattern === undefined || furniturePatterns.includes(item.pattern)))))) return null;
+    return { name: candidate.name, vertices: candidate.vertices, walls: candidate.walls, furniture: candidate.furniture ?? [], comments: candidate.comments ?? [], flooring: candidate.flooring ?? 'none' };
+  }
   async function importJson(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
     if (!file) return;
     try {
-      const value = JSON.parse(await file.text());
-      if (typeof value.name !== 'string' || !Array.isArray(value.vertices) || !Array.isArray(value.walls) ||
-        !value.vertices.every((point: Vertex) => typeof point.id === 'string' && Number.isFinite(point.x) && Number.isFinite(point.y)) ||
-        !value.walls.every((wall: Wall) => typeof wall.id === 'string' && typeof wall.from === 'string' && typeof wall.to === 'string' && Number.isFinite(wall.thickness)) ||
-        !value.walls.every((wall: Wall) => value.vertices.some((point: Vertex) => point.id === wall.from) && value.vertices.some((point: Vertex) => point.id === wall.to)) ||
-        (value.flooring !== undefined && !flooringTypes.includes(value.flooring)) ||
-        (value.furniture !== undefined && (!Array.isArray(value.furniture) || !value.furniture.every((item: Furniture) =>
-          typeof item.id === 'string' && furnitureTypes.includes(item.type) && Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.rotation) && Number.isFinite(item.scale) && item.scale > 0 &&
-          (item.color === undefined || /^#[0-9a-f]{6}$/i.test(item.color)) && (item.pattern === undefined || furniturePatterns.includes(item.pattern)))))) {
-        throw new Error('Invalid plan');
-      }
-      remember();
-      plan = { ...value, furniture: value.furniture ?? [], flooring: value.flooring ?? 'none' };
-      selectedWallId = null;
-      selectedFurnitureId = null;
-      drawStart = null;
+      const imported = normalizePlan(JSON.parse(await file.text()));
+      if (!imported) throw new Error('Invalid plan');
+      saveTabName();
+      const tab: PlanTab = { id: uid(), plan: imported, history: [], future: [] };
+      planTabs = [...planTabs, tab];
+      activeTabId = tab.id;
+      clearPlanInteraction();
     } catch { window.alert('This file is not a valid Forma floor plan.'); }
     (event.target as HTMLInputElement).value = '';
   }
@@ -468,19 +594,41 @@
       if (event.shiftKey) redo(); else undo();
       return;
     }
-    if (event.key === 'Escape') { drawStart = null; selectedWallId = null; selectedFurnitureId = null; showHelp = false; showExport = false; showFurnitureDrawer = false; showSettings = false; tool = 'select'; }
+    if (event.key === 'Escape') { drawStart = null; selectedWallId = null; selectedFurnitureId = null; commentEditor = null; showHelp = false; showExport = false; showFurnitureDrawer = false; showSettings = false; tool = 'select'; }
     if (event.key.toLowerCase() === 'v') setTool('select');
     if (event.key.toLowerCase() === 'w') setTool('wall');
+    if (event.key.toLowerCase() === 'c') setTool('comment');
     if (event.key === 'Delete' || event.key === 'Backspace') deleteSelected();
   }
   function keyup(event: KeyboardEvent) { if (event.code === 'Space') spaceHeld = false; }
   onMount(() => {
     if (window.innerWidth <= 700) showInspector = false;
     try {
-      const saved = localStorage.getItem('forma-plan-v1');
-      if (saved) {
-        const value = JSON.parse(saved);
-        if (value && Array.isArray(value.vertices) && Array.isArray(value.walls)) plan = { ...value, furniture: Array.isArray(value.furniture) ? value.furniture : [], flooring: flooringTypes.includes(value.flooring) ? value.flooring : 'none' };
+      const savedWorkspace = localStorage.getItem('forma-workspace-v2');
+      let restored = false;
+      if (savedWorkspace) {
+        const value = JSON.parse(savedWorkspace);
+        if (value && Array.isArray(value.tabs)) {
+          const seen = new Set<string>();
+          const tabs: PlanTab[] = [];
+          for (const entry of value.tabs) {
+            const restoredPlan = normalizePlan(entry?.plan);
+            if (typeof entry?.id === 'string' && entry.id && !seen.has(entry.id) && restoredPlan) {
+              seen.add(entry.id);
+              tabs.push({ id: entry.id, plan: restoredPlan, history: [], future: [] });
+            }
+          }
+          if (tabs.length) {
+            planTabs = tabs;
+            activeTabId = tabs.some((tab) => tab.id === value.activeTabId) ? value.activeTabId : tabs[0].id;
+            restored = true;
+          }
+        }
+      }
+      if (!restored) {
+        const legacy = localStorage.getItem('forma-plan-v1');
+        const restoredPlan = legacy ? normalizePlan(JSON.parse(legacy)) : null;
+        if (restoredPlan) planTabs = [{ id: 'starter', plan: restoredPlan, history: [], future: [] }];
       }
     } catch { /* Ignore invalid local data. */ }
     hydrated = true;
@@ -501,7 +649,9 @@
       window.removeEventListener('pointercancel', stopDrag);
     };
   });
-  $effect(() => { if (hydrated) localStorage.setItem('forma-plan-v1', JSON.stringify(plan)); });
+  $effect(() => {
+    if (hydrated) localStorage.setItem('forma-workspace-v2', JSON.stringify({ tabs: planTabs.map((tab) => ({ id: tab.id, plan: tab.plan })), activeTabId }));
+  });
 </script>
 
 <svelte:head>
@@ -512,7 +662,20 @@
   <main class="main-content">
     <div class="workspace">
       <div class="workspace-toolbar">
-        <div class="canvas-heading"><span class="live-indicator"></span><span>PLAN EDITOR</span><span class="heading-divider"></span><span class="muted">1 unit = 1 cm</span></div>
+        <div class="plan-tabs" role="tablist" aria-label="Open floor plans">
+          {#each planTabs as tab, index (tab.id)}
+            <div class="plan-tab" class:active={activeTabId === tab.id}>
+              {#if editingTabId === tab.id}
+                <input id={`plan-name-${tab.id}`} class="plan-tab-name-input" aria-label="Plan name" maxlength="60" bind:value={tabNameDraft} onblur={saveTabName} onkeydown={(event) => { if (event.key === 'Enter') saveTabName(); if (event.key === 'Escape') editingTabId = null; }} />
+              {:else}
+                <button id={`plan-tab-${tab.id}`} class="plan-tab-select" type="button" role="tab" aria-selected={activeTabId === tab.id} aria-controls="plan-panel" tabindex={activeTabId === tab.id ? 0 : -1} title={tab.plan.name} onclick={() => switchPlan(tab.id)} ondblclick={() => startRenameTab(tab.id)} onkeydown={(event) => tabKeydown(event, index)}>{tab.plan.name}</button>
+              {/if}
+              {#if activeTabId === tab.id && editingTabId !== tab.id}<button class="plan-tab-action" type="button" aria-label={`Rename ${tab.plan.name}`} title="Rename plan" onclick={() => startRenameTab(tab.id)}><Pencil size={12}/></button>{/if}
+              {#if planTabs.length > 1}<button class="plan-tab-action" type="button" aria-label={`Close ${tab.plan.name}`} title="Close plan" onclick={() => closePlanTab(tab.id)}><X size={13}/></button>{/if}
+            </div>
+          {/each}
+          <button class="new-plan-tab" type="button" aria-label="New plan" title="New plan" onclick={newPlan}><Plus size={15}/><span>New plan</span></button>
+        </div>
         <div class="toolbar-actions">
           <div class="saved-status"><span class="saved-dot"></span> Saved locally</div><span class="toolbar-divider saved-divider"></span>
           <button title="Undo (⌘Z)" aria-label="Undo" disabled={!history.length} onclick={undo}><Undo2 size={17} /></button>
@@ -520,14 +683,13 @@
           <button title="Import JSON" aria-label="Import plan" onclick={() => fileInput.click()}><Upload size={17} /></button>
           <input bind:this={fileInput} type="file" accept=".json,application/json" hidden onchange={importJson} />
           <span class="toolbar-divider"></span>
-          <button class="text-button new-plan-button" type="button" aria-label="New plan" onclick={newPlan}><Plus size={17} /><span>New plan</span></button>
           <button class="primary-button export-button" type="button" aria-label="Export" aria-expanded={showExport} onclick={() => showExport = !showExport}><Download size={17} /><span>Export</span><ChevronDown size={14} /></button>
           {#if showExport}<div class="export-menu"><button type="button" onclick={exportSvg}>Export as SVG <span>Vector drawing</span></button><button type="button" onclick={exportJson}>Export as JSON <span>Editable plan</span></button></div>{/if}
         </div>
       </div>
 
-      <div class="canvas-wrap" class:drawing={tool === 'wall'}>
-        <svg bind:this={svg} class="plan-canvas" viewBox={`${500 - 500 / zoom - pan.x} ${360 - 360 / zoom - pan.y} ${1000 / zoom} ${720 / zoom}`} role="button" tabindex="0" aria-label="Interactive floor plan canvas" onclick={canvasClick} onpointerdown={startPan} onkeydown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Escape') drawStart = null; if (event.key === 'Enter' && tool === 'wall') { const bounds = svg.getBoundingClientRect(); canvasClick(new MouseEvent('click', { clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 })); } }} onpointermove={canvasMove} onpointerup={stopDrag} onpointercancel={stopDrag} onpointerleave={() => cursor = null}>
+      <div id="plan-panel" class="canvas-wrap" class:drawing={tool === 'wall'} class:commenting={tool === 'comment'} role="tabpanel" aria-labelledby={`plan-tab-${activeTabId}`}>
+        <svg bind:this={svg} class="plan-canvas" viewBox={`${500 - 500 / zoom - pan.x} ${360 - 360 / zoom - pan.y} ${1000 / zoom} ${720 / zoom}`} role="button" tabindex="0" aria-label="Interactive floor plan canvas" onclick={canvasClick} onpointerdown={startPan} onkeydown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === 'Escape') drawStart = null; if (event.key === 'Enter' && (tool === 'wall' || tool === 'comment')) { const bounds = svg.getBoundingClientRect(); canvasClick(new MouseEvent('click', { clientX: bounds.left + bounds.width / 2, clientY: bounds.top + bounds.height / 2 })); } }} onpointermove={canvasMove} onpointerup={stopDrag} onpointercancel={stopDrag} onpointerleave={() => cursor = null}>
           <defs><pattern id="smallGrid" width="20" height="20" patternUnits="userSpaceOnUse"><path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e8ece8" stroke-width="1" /></pattern><pattern id="grid" width="100" height="100" patternUnits="userSpaceOnUse"><rect width="100" height="100" fill="url(#smallGrid)"/><path d="M 100 0 L 0 0 0 100" fill="none" stroke="#d6ded8" stroke-width="1.2" /></pattern>{@html flooringDefs}</defs>
           <rect x="-10000" y="-10000" width="20000" height="20000" fill="#fcfdfb" data-pan-surface="" />
           {#if plan.flooring !== 'none'}{#each floorPolygons as points}<polygon {points} fill={`url(#floor-${plan.flooring})`} data-pan-surface="" />{/each}{/if}
@@ -548,6 +710,11 @@
               {@html furnitureMarkup(item.type, item.color, item.pattern, item.id)}
             </g>
           {/each}
+          {#each plan.comments as note, index (note.id)}
+            <g class="comment-note" transform={`translate(${note.x} ${note.y})`} role="button" tabindex="0" aria-label={`Edit comment ${index + 1}: ${note.text}`} onpointerdown={(event) => event.stopPropagation()} onclick={(event) => { event.stopPropagation(); openCommentEditor(note, note.id, note.text, event); tool = 'select'; }} onkeydown={(event) => { if (event.key === 'Enter') { event.preventDefault(); openCommentEditor(note, note.id, note.text); tool = 'select'; } }}>
+              <title>{note.text}</title><circle r="14" fill="#fff" stroke="#278060" stroke-width="2"/><text y="4" text-anchor="middle" class="comment-number">{index + 1}</text><rect x="20" y="-13" width="150" height="26" rx="6" class="comment-label-bg"/><text x="29" y="4" class="comment-label">{note.text.replace(/\s+/g, ' ').slice(0, 25)}{note.text.length > 25 ? '…' : ''}</text>
+            </g>
+          {/each}
           {#if selectedFurniture}
             {@const info = furnitureInfo[selectedFurniture.type]}
             {@const halfWidth = info.width * selectedFurniture.scale / 2}
@@ -566,7 +733,13 @@
           {/if}
           {#if tool === 'wall' && drawStart && cursor}<line x1={drawStart.x} y1={drawStart.y} x2={cursor.x} y2={cursor.y} stroke="#228367" stroke-width="3" stroke-dasharray="8 7" pointer-events="none" /><circle cx={drawStart.x} cy={drawStart.y} r="7" fill="#228367" pointer-events="none" /><circle cx={cursor.x} cy={cursor.y} r="5" fill="white" stroke="#228367" stroke-width="2" pointer-events="none" />{/if}
           {#if tool === 'furniture' && cursor}<g transform={`translate(${cursor.x} ${cursor.y})`} opacity="0.58" pointer-events="none">{@html furnitureMarkup(placementType)}</g>{/if}
+          {#if tool === 'comment' && cursor}<g transform={`translate(${cursor.x} ${cursor.y})`} opacity="0.65" pointer-events="none"><circle r="14" fill="#fff" stroke="#278060" stroke-width="2"/><path d="M-5-4H5M-5 1H3M-5 6H1" stroke="#278060" stroke-width="2" stroke-linecap="round"/></g>{/if}
         </svg>
+        {#if commentEditor}<div class="comment-editor" role="dialog" aria-label={commentEditor.id ? 'Edit comment' : 'New comment'} style:left={`${commentEditor.left}px`} style:top={`${commentEditor.top}px`}>
+          <div class="comment-editor-heading"><strong>{commentEditor.id ? 'Edit comment' : 'New comment'}</strong><button type="button" aria-label="Close comment editor" onclick={() => commentEditor = null}><X size={15}/></button></div>
+          <textarea aria-label="Comment text" placeholder="Add a note about this spot..." maxlength="500" rows="4" bind:value={commentDraft}></textarea>
+          <div class="comment-editor-actions">{#if commentEditor.id}<button type="button" class="comment-delete" onclick={deleteComment}><Trash2 size={14}/> Delete</button>{/if}<button type="button" onclick={() => commentEditor = null}>Cancel</button><button type="button" class="comment-save" disabled={!commentDraft.trim()} onclick={saveComment}>Save</button></div>
+        </div>{/if}
         {#if showFurnitureDrawer}
           <div class="floating-popover furniture-popover">
             <div class="furniture-picker-controls">
@@ -591,7 +764,7 @@
             <button class="settings-row" type="button" aria-pressed={snapGrid} onclick={() => snapGrid = !snapGrid}><Magnet size={17} /><span>Snap to grid</span><span class:checked={snapGrid} class="toggle"><i></i></span></button>
             <button class="settings-row" type="button" aria-pressed={showDimensions} onclick={() => showDimensions = !showDimensions}><Ruler size={17} /><span>Show dimensions</span><span class:checked={showDimensions} class="toggle"><i></i></span></button>
             <div class="setting-group-label">FLOORING</div>
-            <div class="floor-choices">{#each flooringTypes as floor}<button type="button" class:chosen={plan.flooring === floor} aria-pressed={plan.flooring === floor} onclick={() => setFlooring(floor)}><span class="floor-swatch" style:background={flooringInfo[floor].swatch}></span><span><strong>{flooringInfo[floor].label}</strong><small>{flooringInfo[floor].category}</small></span></button>{/each}</div>
+            <div class="floor-choices">{#each flooringTypes as floor}<button type="button" class:chosen={plan.flooring === floor} aria-pressed={plan.flooring === floor} onclick={() => setFlooring(floor)}><span class="floor-swatch" class:large-tile={floor.endsWith('60x120')} style:background={flooringInfo[floor].swatch}></span><span><strong>{flooringInfo[floor].label}</strong><small>{flooringInfo[floor].category}</small></span></button>{/each}</div>
             <div class="popover-foot"><button type="button" onclick={() => { showSettings = false; showHelp = true; }}><CircleHelp size={16} /> How to use Forma</button><span>Hold Shift for 15° angles</span></div>
           </div>
         {/if}
@@ -599,11 +772,12 @@
           <button class:active={tool === 'select'} type="button" title="Select (V)" aria-label="Select and edit" aria-pressed={tool === 'select'} onclick={() => setTool('select')}><MousePointer2 size={17} /><span>Select</span></button>
           <button class:active={tool === 'wall'} type="button" title="Draw wall (W)" aria-label="Draw walls" aria-pressed={tool === 'wall'} onclick={() => setTool('wall')}><Pencil size={17} /><span>Draw wall</span></button>
           <button class:active={tool === 'furniture' || showFurnitureDrawer} type="button" title="Add furniture" aria-label="Add furniture" aria-expanded={showFurnitureDrawer} onclick={() => { showFurnitureDrawer = !showFurnitureDrawer; showSettings = false; }}><Sofa size={17} /><span>Furniture</span></button>
+          <button class:active={tool === 'comment'} type="button" title="Add comment (C)" aria-label="Add comment" aria-pressed={tool === 'comment'} onclick={() => setTool('comment')}><MessageSquarePlus size={17}/><span>Comment</span></button>
           <span class="pill-divider"></span>
           <button class:active={showSettings} class="settings-trigger" type="button" title="View settings" aria-label="View settings" aria-expanded={showSettings} onclick={() => { showSettings = !showSettings; showFurnitureDrawer = false; }}><Settings2 size={18} /></button>
         </div>
-        {#if !plan.walls.length && !plan.furniture.length}<div class="empty-state"><span class="empty-icon"><Pencil size={24} /></span><h2>Start with a wall</h2><p>Click anywhere on the canvas to place the first point, then click again to draw a wall.</p><button type="button" onclick={() => setTool('wall')}>Draw a wall <ArrowUpRight size={16} /></button></div>{/if}
-        <div class="canvas-bottom-left"><span class="scale-mark"></span> 1 m <span class="bottom-separator"></span> {plan.walls.length} walls · {plan.furniture.length} items</div>
+        {#if !plan.walls.length && !plan.furniture.length && !plan.comments.length}<div class="empty-state"><span class="empty-icon"><Pencil size={24} /></span><h2>Start with a wall</h2><p>Click anywhere on the canvas to place the first point, then click again to draw a wall.</p><button type="button" onclick={() => setTool('wall')}>Draw a wall <ArrowUpRight size={16} /></button></div>{/if}
+        <div class="canvas-bottom-left"><span class="scale-mark"></span> 1 m <span class="bottom-separator"></span> {plan.walls.length} walls · {plan.furniture.length} items · {plan.comments.length} notes</div>
         <div class="zoom-controls"><button aria-label="Zoom out" title="Zoom out" onclick={() => zoom = Math.max(0.6, Math.round((zoom - 0.1) * 10) / 10)}><ZoomOut size={17} /></button><span>{Math.round(zoom * 100)}%</span><button aria-label="Zoom in" title="Zoom in" onclick={() => zoom = Math.min(2.5, Math.round((zoom + 0.1) * 10) / 10)}><ZoomIn size={17} /></button><button aria-label="Reset view" title="Reset view" onclick={() => { zoom = 1; pan = { x: 0, y: 0 }; }}><Maximize size={16} /></button></div>
         {#if showInspector}
           <aside class="inspector"><div class="inspector-heading"><div><span class="eyebrow">PROPERTIES</span><h2>{selectedFurniture ? 'Furniture details' : selectedWall ? 'Wall details' : 'Plan overview'}</h2></div><button class="inspector-close" type="button" aria-label="Close properties" onclick={() => showInspector = false}><X size={17} /></button></div>
@@ -628,7 +802,7 @@
             {:else}
               <div class="inspector-section compact-overview"><strong>{plan.name}</strong><small>Floor plan · Draft</small></div>
               <div class="inspector-section compact-overview-stats"><div class="stat-grid"><div class="stat-card"><span>WALLS</span><strong>{plan.walls.length}</strong></div><div class="stat-card"><span>FURNITURE</span><strong>{plan.furniture.length}</strong></div></div><div class="property-row"><span>Total wall length</span><strong>{meters(totalLength)}</strong></div><div class="property-row"><span>Grid spacing</span><strong>20 cm</strong></div></div>
-              <div class="inspector-section compact-floor"><span class="inspector-label">FLOORING</span><div class="floor-summary"><span class="floor-swatch" style:background={flooringInfo[plan.flooring].swatch}></span><span><strong>{flooringInfo[plan.flooring].label}</strong><small>Change in View settings</small></span></div></div>
+              <div class="inspector-section compact-floor"><span class="inspector-label">FLOORING</span><div class="floor-summary"><span class="floor-swatch" class:large-tile={plan.flooring.endsWith('60x120')} style:background={flooringInfo[plan.flooring].swatch}></span><span><strong>{flooringInfo[plan.flooring].label}</strong><small>Change in View settings</small></span></div></div>
             {/if}
           </aside>
         {:else}
@@ -636,7 +810,7 @@
         {/if}
       </div>
 
-      <div class="status-bar"><div><span class="status-pulse"></span>{tool === 'wall' ? (drawStart ? 'Click to place the next point · Esc to stop' : 'Click to start drawing a wall') : tool === 'furniture' ? `Click to place ${furnitureInfo[placementType].label.toLowerCase()}` : 'Drag empty canvas to pan · Select objects to edit'}</div><div>Space + drag to pan anytime <span>•</span> Autosaved in this browser</div></div>
+      <div class="status-bar"><div><span class="status-pulse"></span>{tool === 'wall' ? (drawStart ? 'Click to place the next point · Esc to stop' : 'Click to start drawing a wall') : tool === 'furniture' ? `Click to place ${furnitureInfo[placementType].label.toLowerCase()}` : tool === 'comment' ? 'Click the canvas to add a comment' : 'Drag empty canvas to pan · Select objects to edit'}</div><div>Space + drag to pan anytime <span>•</span> Autosaved in this browser</div></div>
     </div>
   </main>
 
