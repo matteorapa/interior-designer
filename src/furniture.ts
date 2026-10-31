@@ -4,7 +4,7 @@ export type { FurnitureType, FurnitureCategory } from './furnitureCatalog';
 
 export const furniturePatterns = ['solid', 'stripes', 'dots', 'check'] as const;
 export type FurniturePattern = typeof furniturePatterns[number];
-export type Furniture = { id: string; type: FurnitureType; x: number; y: number; rotation: number; scale: number; color?: string; pattern?: FurniturePattern };
+export type Furniture = { id: string; type: FurnitureType; x: number; y: number; rotation: number; scale: number; widthScale?: number; lengthScale?: number; color?: string; pattern?: FurniturePattern };
 export const furnitureColors = ['#b9d3c0', '#d8be94', '#d3a69b', '#adc1d9', '#d9d1bf', '#8b9f92', '#8f8b9f', '#454f4b'];
 
 const categoryColors = { Living: '#b9d3c0', Kitchen: '#d8be94', Bedroom: '#c5d6c8', Bathroom: '#c4dcd9' };

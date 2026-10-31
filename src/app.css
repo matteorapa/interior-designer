@@ -119,11 +119,14 @@
 @media(max-width:700px){.workspace-toolbar{gap:6px}.plan-tab,.new-plan-tab{height:31px}.new-plan-tab{padding:0 8px}.new-plan-tab span{display:none}}
 
 .canvas-wrap.commenting .plan-canvas{cursor:crosshair}
-.comment-note{cursor:pointer}
-.comment-number{font:800 10px Manrope,sans-serif;fill:#278060;pointer-events:none}
-.comment-label-bg{fill:#fff;stroke:#d7e6da;stroke-width:1.5;filter:drop-shadow(0 2px 4px #163b2318)}
-.comment-label{font:700 10px 'DM Sans',sans-serif;fill:#3c614a;pointer-events:none}
-.comment-note:hover .comment-label-bg{fill:#f0f8f1;stroke:#9bc9a9}
+.comment-note{cursor:grab;touch-action:none}
+.comment-note:active{cursor:grabbing}
+.comment-note{filter:drop-shadow(0 2px 2px #3c493337)}
+.comment-note:hover path:first-child,.comment-note.selected path:first-child{fill:#435f4b;stroke:#344b38}
+.furniture-measurement line{stroke:#238060;stroke-width:1.5}
+.furniture-measurement rect{fill:#fff;stroke:#b8d9c2;stroke-width:1}
+.furniture-measurement text{fill:#286e50;font:800 11px Manrope,sans-serif}
+.compact-range{grid-template-columns:42px minmax(0,1fr) 53px}
 .comment-editor{position:absolute;z-index:26;width:270px;padding:12px;border:1px solid #cfe3d4;border-radius:11px;background:#fff;box-shadow:0 14px 36px #1a3d2530}
 .comment-editor-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px;color:#315b41;font-size:12px}
 .comment-editor-heading button{width:24px;height:24px;display:grid;place-items:center;border:0;border-radius:5px;background:#f3f7f3;color:#78917e}
@@ -135,3 +138,83 @@
 .comment-editor-actions .comment-save{background:#278060;border-color:#278060;color:#fff}
 .floor-swatch.large-tile{background-size:36px 18px!important}
 @media(max-width:550px){.editor-pill button{width:37px;padding:0}.editor-pill button span{display:none}.editor-pill .settings-trigger{width:37px}}
+
+/* Warm paper, graphite lines, and small handwritten details give the studio a sketchbook feel. */
+:root{color:#383b34;background:#eee8da}
+body{background:#eee8da}
+.workspace{background:radial-gradient(circle at 15% 12%,#f7f2e9 0,#f0eade 42%,#eae3d6 100%)}
+.canvas-wrap{border:1px solid #beb5a4;border-radius:7px;background:#fbf7ec;box-shadow:3px 4px 0 #d7cdbd,0 10px 24px #5a4d3820}
+.plan-tab,.new-plan-tab{border-color:#bdb4a2;border-radius:7px 9px 5px 5px;background:#e9e2d3;color:#665e4e;box-shadow:1px 2px 0 #d2c8b7}
+.plan-tab.active{background:#fbf7ec;border-color:#9e9480;color:#3d483b;box-shadow:2px 2px 0 #c5bba8}
+.plan-tab-select,.new-plan-tab{font-family:'Patrick Hand','Comic Sans MS',cursive;font-size:15px;font-weight:400;letter-spacing:.2px}
+.new-plan-tab{background:#f2ebdb;border-style:dashed;color:#655c49}
+.new-plan-tab:hover{background:#fff4d7;border-color:#938267;color:#4d4b3b}
+.plan-tab-action{color:#817764}
+.toolbar-actions .saved-status,.status-bar,.canvas-bottom-left{color:#766d5f}
+.toolbar-actions>button.text-button,.toolbar-actions>button.primary-button{border-color:#b8ae9a;background:#fbf7ee;color:#514a3d;box-shadow:1px 2px 0 #d5cbb9}
+.toolbar-actions>button.primary-button,.toolbar-actions>button.primary-button:hover{background:#6a735b;border-color:#59654f;color:#fffdf4}
+.toolbar-actions>button.text-button:hover{background:#f4eddc;color:#403d34}
+.toolbar-divider,.top-divider{background:#c9bfae}
+.saved-dot,.status-pulse{background:#87936d}
+.editor-pill,.floating-popover,.comment-editor,.inspector,.canvas-bottom-left,.zoom-controls{background:#fffdf6;border:1px solid #c7bdab;box-shadow:2px 3px 0 #d5c9b6,0 11px 24px #64513d20}
+.editor-pill{border-radius:10px 12px 9px 11px;padding:5px 7px}
+.editor-pill button{color:#5c594e;font-family:'Patrick Hand','Comic Sans MS',cursive;font-size:15px;font-weight:400}
+.editor-pill button.active{background:#e8e5d4;color:#465b47;box-shadow:inset 0 0 0 1px #c0c8aa}
+.editor-pill button:hover{background:#f3ecdb;color:#465b47}
+.pill-divider{background:#d1c6b2}
+.floating-popover,.comment-editor,.inspector{border-radius:7px 11px 8px 10px}
+.inspector-heading,.inspector-section{background:#fffdf6}
+.inspector-heading{border-bottom:1px solid #ddd3c2}
+.inspector-heading h2,.popover-heading strong,.comment-editor-heading strong,.modal h2{font-family:'Patrick Hand','Comic Sans MS',cursive;font-size:19px;font-weight:400;color:#3e4739;letter-spacing:.2px}
+.eyebrow,.inspector-label,.setting-group-label{color:#8d806b}
+.wall-preview,.stat-card,.compact-metrics>div{background:#f6f0e3;border:1px solid #e9dfce}
+.inspector input[type=range]{accent-color:#758465}
+.floor-choices button,.furniture-choices button,.furniture-categories button,.pattern-choices button,.settings-row{background:#fffdf6;border-color:#ded4c4;color:#59574a}
+.floor-choices button.chosen,.furniture-choices button.chosen,.furniture-categories button.active,.pattern-choices button.chosen{background:#eeebdb;border-color:#899777;color:#475b45}
+.comment-editor textarea{background:repeating-linear-gradient(to bottom,#fffdf6 0 21px,#ddd8c9 22px 23px);border-color:#c9beaa;border-radius:3px;color:#3f4538;font-family:'Patrick Hand','Comic Sans MS',cursive;font-size:18px;line-height:23px}
+.comment-editor textarea:focus{border-color:#8a987b;box-shadow:0 0 0 2px #e7ebdd}
+.comment-editor-actions .comment-save{background:#6a735b;border-color:#59654f}
+.dimension-bg,.furniture-measurement rect{fill:#fffdf6;stroke:#bfb49f}
+.dimension-text,.furniture-measurement text{font-family:'Patrick Hand','Comic Sans MS',cursive;font-size:15px;font-weight:400;fill:#554f43}
+.furniture-measurement line{stroke:#797b65}
+.vertex-halo{fill:#eee9d7;stroke:#9ca48a}
+.vertex-point{stroke:#62765c}
+.wall-hit:focus-visible,.furniture-item:focus-visible,.comment-note:focus-visible{outline:2px dashed #7a8468}
+.open-wall-end{fill:#e5a45c33;stroke:#bc743a;stroke-width:2.5;stroke-dasharray:5 4;filter:drop-shadow(0 0 3px #fff8e8)}
+.floor-warning{position:absolute;z-index:11;top:16px;left:16px;display:flex;gap:9px;max-width:min(305px,calc(100% - 32px));padding:11px 12px;border:1px solid #c69662;border-radius:7px 9px 8px 6px;background:#fff7dfed;color:#86572d;box-shadow:2px 3px 0 #d4b78980,0 7px 16px #5d472324}
+.floor-warning>svg{flex:none;margin-top:1px}
+.floor-warning strong,.room-status strong{display:block;font-size:11px;font-weight:800}
+.floor-warning span,.room-status small{display:block;margin-top:3px;font-size:10px;line-height:1.4}
+.floor-warning button{margin-top:8px;padding:5px 9px;border:1px solid #b37b48;border-radius:5px;background:#fffdf5;color:#754d29;font-size:10px;font-weight:800}
+.floor-warning button:hover{background:#ffe9bd}
+.room-status{display:flex;align-items:flex-start;gap:8px;margin:8px 2px 0;padding:8px;border:1px solid #cdd8c1;border-radius:7px;background:#f3f6eb;color:#526d4b}
+.room-status.open{border-color:#dfc3a3;background:#fff5e4;color:#8b5e32}
+.room-status-icon{display:grid;place-items:center;flex:none;width:20px;height:20px;border-radius:50%;background:#e3ebdb}
+.room-status.open .room-status-icon{background:#f6e3c8}
+.room-status small{margin-top:2px;color:inherit;opacity:.82}
+.template-origin{display:flex;align-items:center;gap:4px;margin-top:8px;color:#5d7259;font-size:10px;text-decoration:underline;text-underline-offset:2px}
+.template-origin:hover{color:#365d43}
+.template-picker-backdrop{position:fixed;inset:0;z-index:80;display:grid;place-items:center;padding:14px;background:#343a32a8;backdrop-filter:blur(3px)}
+.template-picker{width:min(830px,100%);max-height:min(90dvh,690px);overflow:auto;padding:20px;border:1px solid #a99f8c;border-radius:10px 13px 9px 12px;background:#fffdf6;box-shadow:4px 5px 0 #a99c8359,0 24px 70px #171e1780}
+.template-picker-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin-bottom:16px}
+.template-picker-heading h2{margin:2px 0 4px;color:#3e4739;font:normal 27px 'Patrick Hand','Comic Sans MS',cursive}
+.template-picker-heading p{margin:0;color:#786f5f;font-size:11px;line-height:1.45}
+.template-picker-heading>button{display:grid;place-items:center;flex:none;width:30px;height:30px;border:1px solid #ded4c4;border-radius:6px;background:#f6f0e3;color:#6c6758}
+.template-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+.template-card{min-width:0;overflow:hidden;border:1px solid #d4cbb9;border-radius:7px 10px 8px 6px;background:#faf6eb;box-shadow:1px 2px 0 #e1d7c6}
+.template-card:hover{border-color:#8b9e80;box-shadow:2px 3px 0 #c5cfb9}
+.template-card-action{display:grid;grid-template-columns:137px minmax(0,1fr);gap:13px;align-items:center;width:100%;min-height:143px;padding:10px;border:0;background:transparent;text-align:left;color:inherit}
+.template-card-action:focus-visible,.template-card-footer a:focus-visible{outline:2px solid #678f69;outline-offset:-3px}
+.template-preview{display:grid;place-items:center;width:137px;height:120px;overflow:hidden;border:1px solid #ddd3c1;border-radius:5px;background:repeating-linear-gradient(0deg,transparent 0 17px,#e8e0d2 18px),repeating-linear-gradient(90deg,#fbf8ef 0 17px,#e8e0d2 18px)}
+.template-preview svg{display:block;width:100%;height:100%}
+.blank-preview{color:#758b6d;border-style:dashed;background:#f7f4e9}
+.template-card-copy{display:flex;flex-direction:column;align-items:flex-start;gap:4px;min-width:0}
+.template-card-copy small{color:#8f8775;font-size:9px;font-weight:800;letter-spacing:1px}
+.template-card-copy strong{color:#3d4d3e;font:normal 20px 'Patrick Hand','Comic Sans MS',cursive}
+.template-card-copy>span{color:#746e61;font-size:11px;line-height:1.4}
+.template-card-footer{display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:30px;padding:5px 10px;border-top:1px solid #e2d9c9;color:#8a8274;font-size:9px}
+.template-card-footer>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.template-card-footer a{display:flex;align-items:center;gap:2px;flex:none;color:#5a765c;font-weight:800;text-decoration:none}
+.template-card-footer a:hover{text-decoration:underline}
+@media(max-width:700px){.template-picker{max-height:calc(100dvh - 28px);padding:15px}.template-grid{grid-template-columns:1fr}.template-card-action{min-height:120px;grid-template-columns:125px minmax(0,1fr)}.template-preview{width:125px;height:100px}}
+@media(max-width:380px){.template-card-action{grid-template-columns:100px minmax(0,1fr);gap:9px}.template-preview{width:100px;height:92px}.template-card-copy strong{font-size:18px}}
