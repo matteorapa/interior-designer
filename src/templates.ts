@@ -1,10 +1,12 @@
-import type { Furniture, FurnitureType } from './furniture';
+import { defaultFinishForMaterial, defaultMaterialForType, type Furniture, type FurnitureType } from './furniture';
 import type { FlooringType } from './flooring';
+import type { WallOpening } from './openings';
 
 export type TemplatePlan = {
   name: string;
   vertices: { id: string; x: number; y: number }[];
   walls: { id: string; from: string; to: string; thickness: number }[];
+  openings: WallOpening[];
   furniture: Furniture[];
   comments: { id: string; x: number; y: number; text: string }[];
   flooring: FlooringType;
@@ -34,7 +36,11 @@ function makePlan(
     name,
     vertices: Object.entries(points).map(([id, [x, y]]) => ({ id, x, y })),
     walls: edges.map(([from, to], index) => ({ id: `w${index + 1}`, from, to, thickness: 14 })),
-    furniture: items.map(([type, x, y, rotation = 0, scale = 0.8], index) => ({ id: `f${index + 1}`, type, x, y, rotation, scale })),
+    openings: [],
+    furniture: items.map(([type, x, y, rotation = 0, scale = 0.8], index) => {
+      const material = defaultMaterialForType(type);
+      return { id: `f${index + 1}`, type, x, y, rotation, scale, material, finish: defaultFinishForMaterial(material) };
+    }),
     comments: [],
     flooring
   };

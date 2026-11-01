@@ -1,10 +1,11 @@
 import { furnitureInfo, furnitureTypes, type FurnitureType } from './furnitureCatalog';
+import { materialFinishes, materialPatternMarkup, type MaterialType } from './materials';
 export { furnitureInfo, furnitureTypes, furnitureCategories } from './furnitureCatalog';
 export type { FurnitureType, FurnitureCategory } from './furnitureCatalog';
 
 export const furniturePatterns = ['solid', 'stripes', 'dots', 'check'] as const;
 export type FurniturePattern = typeof furniturePatterns[number];
-export type Furniture = { id: string; type: FurnitureType; x: number; y: number; rotation: number; scale: number; widthScale?: number; lengthScale?: number; color?: string; pattern?: FurniturePattern };
+export type Furniture = { id: string; type: FurnitureType; x: number; y: number; rotation: number; scale: number; widthScale?: number; lengthScale?: number; color?: string; pattern?: FurniturePattern; material?: MaterialType; finish?: string };
 export const furnitureColors = ['#b9d3c0', '#d8be94', '#d3a69b', '#adc1d9', '#d9d1bf', '#8b9f92', '#8f8b9f', '#454f4b'];
 
 const categoryColors = { Living: '#b9d3c0', Kitchen: '#d8be94', Bedroom: '#c5d6c8', Bathroom: '#c4dcd9' };
@@ -13,6 +14,18 @@ const originalColors: Partial<Record<FurnitureType, string>> = {
   bookshelf: '#bfa481', wardrobe: '#c5ad89', 'floor-lamp': '#e1c99b'
 };
 export const defaultColors = Object.fromEntries(furnitureTypes.map((type) => [type, originalColors[type] ?? categoryColors[furnitureInfo[type].category]])) as Record<FurnitureType, string>;
+
+export function defaultMaterialForType(type: FurnitureType): MaterialType {
+  const shape = furnitureInfo[type].shape;
+  if (['sofa', 'sectional', 'chaise', 'armchair', 'recliner', 'ottoman', 'bench', 'chair', 'bed', 'bunk', 'crib', 'rug-rectangle', 'rug-round'].includes(shape)) return 'fabric';
+  if (['island', 'island-l', 'counter', 'counter-l', 'sink', 'double-sink', 'vanity-single', 'vanity-double', 'bathtub', 'shower-square', 'shower-rectangle'].includes(shape)) return 'stone';
+  if (['table-square', 'table-rectangle', 'table-round', 'table-oval', 'dining-rectangle', 'dining-square', 'dining-round', 'dining-oval', 'wardrobe', 'pantry', 'dresser', 'desk', 'bookshelf', 'console', 'cabinet', 'cart', 'nightstand'].includes(shape)) return 'wood';
+  return 'paint';
+}
+
+export function defaultFinishForMaterial(material: MaterialType) {
+  return material === 'paint' ? undefined : materialFinishes[material][0].id;
+}
 
 // Minimal top views shared by the picker, canvas, and SVG export.
 // The selected colour fills every solid part. Neutral strokes describe the shape.
@@ -83,11 +96,15 @@ function baseFurnitureMarkup(type: FurnitureType, surface: string, ink: string):
   }
 }
 
-export function furnitureMarkup(type: FurnitureType, color = defaultColors[type], pattern: FurniturePattern = 'solid', id = 'preview'): string {
-  const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : defaultColors[type];
-  const safePattern = furniturePatterns.includes(pattern) ? pattern : 'solid';
+export function furnitureMarkup(type: FurnitureType, color = defaultColors[type], pattern: FurniturePattern = 'solid', id = 'preview', material?: MaterialType, finish?: string): string {
   const safeId = id.replace(/[^a-z0-9_-]/gi, '');
   const patternId = `finish-${safeId}`;
+  if (material && material !== 'paint') {
+    const textured = materialPatternMarkup(material, finish, patternId);
+    return textured.defs + baseFurnitureMarkup(type, textured.surface, textured.ink);
+  }
+  const safeColor = /^#[0-9a-f]{6}$/i.test(color) ? color : defaultColors[type];
+  const safePattern = furniturePatterns.includes(pattern) ? pattern : 'solid';
   const brightness = (parseInt(safeColor.slice(1, 3), 16) * 299 + parseInt(safeColor.slice(3, 5), 16) * 587 + parseInt(safeColor.slice(5, 7), 16) * 114) / 1000;
   const ink = brightness < 120 ? '#ffffff' : '#263e33';
   const surface = safePattern === 'solid' ? safeColor : `url(#${patternId})`;

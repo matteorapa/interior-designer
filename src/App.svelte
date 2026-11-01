@@ -5,14 +5,16 @@
     MessageSquarePlus, MousePointer2, Pencil, Plus, Redo2, Ruler, Search, Settings2, Sofa, Trash2, Undo2,
     Upload, X, ZoomIn, ZoomOut
   } from '@lucide/svelte';
-  import { defaultColors, furnitureCategories, furnitureColors, furnitureInfo, furnitureMarkup, furniturePatterns, furnitureTypes, type Furniture, type FurniturePattern, type FurnitureType } from './furniture';
+  import { defaultColors, defaultFinishForMaterial, defaultMaterialForType, furnitureCategories, furnitureColors, furnitureInfo, furnitureMarkup, furniturePatterns, furnitureTypes, type Furniture, type FurniturePattern, type FurnitureType } from './furniture';
+  import { materialFinishes, materialLabels, materialTypes, type MaterialType } from './materials';
+  import { fitOpening, openingBounds, openingMarkup, wallSegments, type OpeningType, type WallOpening } from './openings';
   import { closedRoomPolygons, flooringDefs, flooringInfo, flooringTypes, type FlooringType } from './flooring';
   import { planTemplates } from './templates';
 
   type Vertex = { id: string; x: number; y: number };
   type Wall = { id: string; from: string; to: string; thickness: number };
   type PlanComment = { id: string; x: number; y: number; text: string };
-  type Plan = { name: string; vertices: Vertex[]; walls: Wall[]; furniture: Furniture[]; comments: PlanComment[]; flooring: FlooringType; templateId?: string };
+  type Plan = { name: string; vertices: Vertex[]; walls: Wall[]; openings: WallOpening[]; furniture: Furniture[]; comments: PlanComment[]; flooring: FlooringType; templateId?: string };
   type PlanTab = { id: string; plan: Plan; history: Plan[]; future: Plan[] };
   type DrawStart = { x: number; y: number; vertexId?: string };
   const WALL_SNAP_PX = 12;
@@ -35,10 +37,10 @@
       { id: 'w7', from: 'v7', to: 'v1', thickness: 16 }
     ],
     furniture: [
-      { id: 'f1', type: 'sofa', x: 305, y: 265, rotation: 0, scale: 0.85 },
-      { id: 'f2', type: 'dining', x: 570, y: 380, rotation: 0, scale: 0.8 },
-      { id: 'f3', type: 'island', x: 365, y: 405, rotation: 0, scale: 0.8 }
-    ], comments: []
+      { id: 'f1', type: 'sofa', x: 305, y: 265, rotation: 0, scale: 0.85, material: 'fabric', finish: 'linen' },
+      { id: 'f2', type: 'dining', x: 570, y: 380, rotation: 0, scale: 0.8, material: 'wood', finish: 'oak' },
+      { id: 'f3', type: 'island', x: 365, y: 405, rotation: 0, scale: 0.8, material: 'stone', finish: 'marble' }
+    ], openings: [], comments: []
   };
 
   const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -54,6 +56,7 @@
   let activeTemplate = $derived(planTemplates.find((template) => template.id === plan.templateId));
   let tool = $state<'select' | 'wall' | 'furniture' | 'comment'>('select');
   let selectedWallId = $state<string | null>(null);
+  let selectedOpeningId = $state<string | null>(null);
   let selectedFurnitureId = $state<string | null>(null);
   let commentEditor = $state<{ id: string | null; x: number; y: number; left: number; top: number } | null>(null);
   let commentDraft = $state('');
@@ -69,6 +72,7 @@
   let dragging: { id: string; before: Plan; moved: boolean; snapTargetId?: string } | null = null;
   let draggingFurniture: { id: string; before: Plan; moved: boolean } | null = null;
   let draggingComment: { id: string; before: Plan; moved: boolean; offsetX: number; offsetY: number } | null = null;
+  let draggingOpening: { id: string; before: Plan; moved: boolean } | null = null;
   let transformingFurniture: { id: string; mode: 'rotate' | 'resize'; before: Plan; startAngle: number; rotation: number; startLocalX: number; startLocalY: number; widthScale: number; lengthScale: number; moved: boolean } | null = null;
   let suppressCanvasClick = false;
   let suppressCommentClick = false;
@@ -88,6 +92,7 @@
   let svg: SVGSVGElement;
 
   let selectedWall = $derived(plan.walls.find((wall) => wall.id === selectedWallId));
+  let selectedOpening = $derived(plan.openings.find((opening) => opening.id === selectedOpeningId));
   let selectedFurniture = $derived(plan.furniture.find((item) => item.id === selectedFurnitureId));
   let matchingFurniture = $derived(furnitureTypes.filter((type) => {
     const query = furnitureQuery.trim().toLowerCase();
@@ -143,6 +148,55 @@
   function lengthScale(item: Furniture) { return item.lengthScale ?? item.scale; }
   function furnitureWidth(item: Furniture) { return Math.round(furnitureInfo[item.type].width * widthScale(item)); }
   function furnitureLength(item: Furniture) { return Math.round(furnitureInfo[item.type].height * lengthScale(item)); }
+  function furnitureArt(item: Furniture, id = item.id) { return furnitureMarkup(item.type, item.color, item.pattern, id, item.material, item.finish); }
+  function furniturePreview(type: FurnitureType, id: string) {
+    const material = defaultMaterialForType(type);
+    return furnitureMarkup(type, defaultColors[type], 'solid', id, material, defaultFinishForMaterial(material));
+  }
+  function openingsOnWall(wallId: string) { return plan.openings.filter((opening) => opening.wallId === wallId); }
+  function openingTransform(opening: WallOpening, a: Vertex, b: Vertex) {
+    const wallLength = distance(a, b);
+    const center = openingBounds(opening, wallLength).center / wallLength;
+    return `translate(${a.x + (b.x - a.x) * center} ${a.y + (b.y - a.y) * center}) rotate(${Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI})`;
+  }
+  function addOpening(type: OpeningType) {
+    if (!selectedWall) return;
+    const available = fitOpening(length(selectedWall), openingsOnWall(selectedWall.id), type === 'door' ? 90 : 120);
+    if (!available) return;
+    remember();
+    const opening: WallOpening = { id: uid(), wallId: selectedWall.id, type, ...available };
+    plan.openings.push(opening);
+    selectedOpeningId = opening.id;
+  }
+  function changeOpening(property: 'width' | 'position', event: Event) {
+    if (!selectedOpening || !selectedWall) return;
+    const wallLength = length(selectedWall);
+    const others = openingsOnWall(selectedWall.id).filter((item) => item.id !== selectedOpeningId);
+    const value = Number((event.currentTarget as HTMLInputElement).value);
+    const fitted = fitOpening(wallLength, others, property === 'width' ? value : selectedOpening.width, property === 'position' ? value / 100 : selectedOpening.position);
+    if (!fitted || (fitted.width === selectedOpening.width && Math.abs(fitted.position - selectedOpening.position) < 0.001)) return;
+    remember();
+    selectedOpening.width = fitted.width;
+    selectedOpening.position = fitted.position;
+  }
+  function deleteOpening() {
+    if (!selectedOpeningId) return;
+    remember();
+    plan.openings = plan.openings.filter((opening) => opening.id !== selectedOpeningId);
+    selectedOpeningId = null;
+  }
+  function startOpeningDrag(event: PointerEvent, id: string) {
+    if (event.button !== 0 || tool !== 'select') return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectedOpeningId = id;
+    selectedWallId = plan.openings.find((opening) => opening.id === id)?.wallId ?? null;
+    selectedFurnitureId = null;
+    showInspector = true;
+    suppressCanvasClick = true;
+    draggingOpening = { id, before: clone(plan), moved: false };
+    svg.setPointerCapture(event.pointerId);
+  }
   function localFurniturePoint(point: { x: number; y: number }, item: Furniture) {
     const radians = -item.rotation * Math.PI / 180;
     const x = point.x - item.x, y = point.y - item.y;
@@ -158,6 +212,7 @@
     activeTab.plan = history.at(-1)!;
     activeTab.history = history.slice(0, -1);
     selectedWallId = null;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     drawStart = null;
     commentEditor = null;
@@ -168,6 +223,7 @@
     activeTab.plan = future[0];
     activeTab.future = future.slice(1);
     selectedWallId = null;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     drawStart = null;
     commentEditor = null;
@@ -176,6 +232,7 @@
     tool = next;
     drawStart = null;
     selectedWallId = null;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     commentEditor = null;
     showFurnitureDrawer = false;
@@ -186,6 +243,7 @@
     placementType = type;
     drawStart = null;
     selectedWallId = null;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     commentEditor = null;
     showFurnitureDrawer = false;
@@ -198,11 +256,13 @@
       id: uid(), type,
       x: Math.round(Math.max(info.width / 2, Math.min(1000 - info.width / 2, position.x))),
       y: Math.round(Math.max(info.height / 2, Math.min(720 - info.height / 2, position.y))),
-      rotation: 0, scale: 1, widthScale: 1, lengthScale: 1, color: defaultColors[type], pattern: 'solid'
+      rotation: 0, scale: 1, widthScale: 1, lengthScale: 1, color: defaultColors[type], pattern: 'solid',
+      material: defaultMaterialForType(type), finish: defaultFinishForMaterial(defaultMaterialForType(type))
     };
     plan.furniture.push(item);
     selectedFurnitureId = item.id;
     selectedWallId = null;
+    selectedOpeningId = null;
     showInspector = true;
     tool = 'select';
     showFurnitureDrawer = false;
@@ -309,7 +369,7 @@
     if (suppressCanvasClick) { suppressCanvasClick = false; return; }
     showFurnitureDrawer = false;
     showSettings = false;
-    if (tool === 'select') { selectedWallId = null; selectedFurnitureId = null; commentEditor = null; return; }
+    if (tool === 'select') { selectedWallId = null; selectedOpeningId = null; selectedFurnitureId = null; commentEditor = null; return; }
     if (tool === 'furniture') { addFurniture(placementType, screenPoint(event)); return; }
     if (tool === 'comment') { openCommentEditor(screenPoint(event), null, '', event); return; }
     const point = constrain(screenPoint(event), event.shiftKey);
@@ -323,6 +383,7 @@
     const wall = { id: uid(), from: startId, to: endId, thickness: 16 };
     plan.walls.push(wall);
     selectedWallId = wall.id;
+    selectedOpeningId = null;
     showInspector = true;
     drawStart = point.vertexId ? null : { x: point.x, y: point.y, vertexId: endId };
   }
@@ -339,6 +400,20 @@
       const scale = svg.getScreenCTM()?.a || 1;
       pan = { x: panning.x + (event.clientX - panning.startX) / scale, y: panning.y + (event.clientY - panning.startY) / scale };
       if (Math.hypot(event.clientX - panning.startX, event.clientY - panning.startY) > 3) panning.moved = true;
+      return;
+    }
+    if (draggingOpening) {
+      const opening = plan.openings.find((item) => item.id === draggingOpening!.id);
+      const wall = plan.walls.find((item) => item.id === opening?.wallId);
+      const a = wall && vertex(wall.from), b = wall && vertex(wall.to);
+      if (opening && a && b) {
+        const point = screenPoint(event);
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const wallLength = Math.hypot(dx, dy);
+        const position = ((point.x - a.x) * dx + (point.y - a.y) * dy) / (wallLength * wallLength);
+        const fitted = fitOpening(wallLength, openingsOnWall(wall!.id).filter((item) => item.id !== opening.id), opening.width, position);
+        if (fitted && (Math.abs(opening.position - fitted.position) > 0.001 || opening.width !== fitted.width)) { opening.position = fitted.position; opening.width = fitted.width; draggingOpening.moved = true; }
+      }
       return;
     }
     if (transformingFurniture) {
@@ -426,6 +501,7 @@
     event.stopPropagation();
     selectedFurnitureId = id;
     selectedWallId = null;
+    selectedOpeningId = null;
     showInspector = true;
     tool = 'select';
     suppressCanvasClick = true;
@@ -470,6 +546,7 @@
         if (wall.to === sourceId) wall.to = targetId;
       }
       plan.walls = plan.walls.filter((wall) => wall.from !== wall.to);
+      plan.openings = plan.openings.filter((opening) => plan.walls.some((wall) => wall.id === opening.wallId));
       plan.vertices = plan.vertices.filter((point) => point.id !== sourceId);
       if (selectedWallId && !plan.walls.some((wall) => wall.id === selectedWallId)) selectedWallId = null;
     }
@@ -481,13 +558,14 @@
         if (note) openCommentEditor(note, note.id, note.text);
       }
     }
-    if (dragging?.moved || draggingFurniture?.moved || draggingComment?.moved || transformingFurniture?.moved) {
-      activeTab.history = [...history.slice(-49), (dragging ?? draggingFurniture ?? draggingComment ?? transformingFurniture)!.before];
+    if (dragging?.moved || draggingFurniture?.moved || draggingComment?.moved || draggingOpening?.moved || transformingFurniture?.moved) {
+      activeTab.history = [...history.slice(-49), (dragging ?? draggingFurniture ?? draggingComment ?? draggingOpening ?? transformingFurniture)!.before];
       activeTab.future = [];
     }
     dragging = null;
     draggingFurniture = null;
     draggingComment = null;
+    draggingOpening = null;
     transformingFurniture = null;
     panning = null;
     if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
@@ -511,7 +589,7 @@
     const offsets: Record<string, [number, number]> = {
       ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]
     };
-    if (event.key === 'Enter') { selectedFurnitureId = id; selectedWallId = null; showInspector = true; return; }
+    if (event.key === 'Enter') { selectedFurnitureId = id; selectedWallId = null; selectedOpeningId = null; showInspector = true; return; }
     const offset = offsets[event.key];
     if (!offset) return;
     event.preventDefault();
@@ -540,12 +618,18 @@
       selectedFurnitureId = null;
       return;
     }
+    if (selectedOpeningId) { deleteOpening(); return; }
+    deleteWall();
+  }
+  function deleteWall() {
     if (!selectedWallId) return;
     remember();
     plan.walls = plan.walls.filter((wall) => wall.id !== selectedWallId);
+    plan.openings = plan.openings.filter((opening) => opening.wallId !== selectedWallId);
     const used = new Set(plan.walls.flatMap((wall) => [wall.from, wall.to]));
     plan.vertices = plan.vertices.filter((point) => used.has(point.id));
     selectedWallId = null;
+    selectedOpeningId = null;
   }
   function setThickness(event: Event) {
     if (!selectedWall) return;
@@ -576,6 +660,18 @@
     remember();
     selectedFurniture.pattern = pattern;
   }
+  function setFurnitureMaterial(material: MaterialType) {
+    if (!selectedFurniture || (selectedFurniture.material ?? 'paint') === material) return;
+    remember();
+    selectedFurniture.material = material;
+    selectedFurniture.finish = defaultFinishForMaterial(material);
+  }
+  function setFurnitureFinish(finish: string) {
+    if (!selectedFurniture || !selectedFurniture.material || selectedFurniture.material === 'paint' ||
+      !materialFinishes[selectedFurniture.material].some((item) => item.id === finish) || selectedFurniture.finish === finish) return;
+    remember();
+    selectedFurniture.finish = finish;
+  }
   function setFlooring(flooring: FlooringType) {
     if (plan.flooring === flooring) return;
     remember();
@@ -587,6 +683,7 @@
     const wall = { id: uid(), from: openWallEnds[0].id, to: openWallEnds[1].id, thickness: 16 };
     plan.walls.push(wall);
     selectedWallId = wall.id;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     drawStart = null;
     tool = 'select';
@@ -594,6 +691,7 @@
   }
   function clearPlanInteraction() {
     selectedWallId = null;
+    selectedOpeningId = null;
     selectedFurnitureId = null;
     drawStart = null;
     cursor = null;
@@ -660,7 +758,7 @@
     let number = 1;
     while (planTabs.some((tab) => tab.plan.name === `Untitled plan ${number}`)) number++;
     const nextPlan: Plan = template ? { ...clone(template.plan), templateId: template.id } :
-      { name: `Untitled plan ${number}`, vertices: [], walls: [], furniture: [], comments: [], flooring: 'none' };
+      { name: `Untitled plan ${number}`, vertices: [], walls: [], openings: [], furniture: [], comments: [], flooring: 'none' };
     const tab: PlanTab = { id: uid(), plan: nextPlan, history: [], future: [] };
     planTabs = [...planTabs, tab];
     activeTabId = tab.id;
@@ -686,9 +784,12 @@
     const floors = plan.flooring === 'none' ? '' : closedRoomPolygons(plan.vertices, plan.walls).map((points) => `<polygon points="${points}" fill="url(#floor-${plan.flooring})"/>`).join('');
     const lines = plan.walls.map((wall) => {
       const a = vertex(wall.from), b = vertex(wall.to);
-      return a && b ? `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke="#3b3934" stroke-width="${wall.thickness}" stroke-linecap="round"/>` : '';
+      if (!a || !b) return '';
+      const segments = wallSegments(a, b, openingsOnWall(wall.id)).map((segment) => `<line x1="${segment.x1}" y1="${segment.y1}" x2="${segment.x2}" y2="${segment.y2}" stroke="#3b3934" stroke-width="${wall.thickness}" stroke-linecap="butt"/>`).join('');
+      const openings = openingsOnWall(wall.id).map((opening) => `<g transform="${openingTransform(opening, a, b)}">${openingMarkup(opening, distance(a, b))}</g>`).join('');
+      return segments + openings;
     }).join('');
-    const furnishings = plan.furniture.map((item) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${widthScale(item)} ${lengthScale(item)})">${furnitureMarkup(item.type, item.color, item.pattern, item.id)}</g>`).join('');
+    const furnishings = plan.furniture.map((item) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${widthScale(item)} ${lengthScale(item)})">${furnitureArt(item)}</g>`).join('');
     const notes = plan.comments.map((note) => `<g transform="translate(${note.x} ${note.y})">${commentIconMarkup}</g>`).join('');
     const image = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="864" viewBox="0 0 1000 720"><defs>${flooringDefs}</defs><rect width="1000" height="720" fill="#fbf7ec"/>${floors}${lines}${furnishings}${notes}</svg>`;
     download(image, filename('svg'), 'image/svg+xml');
@@ -701,6 +802,10 @@
       !candidate.vertices.every((point) => typeof point.id === 'string' && Number.isFinite(point.x) && Number.isFinite(point.y)) ||
       !candidate.walls.every((wall) => typeof wall.id === 'string' && typeof wall.from === 'string' && typeof wall.to === 'string' && Number.isFinite(wall.thickness)) ||
       !candidate.walls.every((wall) => candidate.vertices!.some((point) => point.id === wall.from) && candidate.vertices!.some((point) => point.id === wall.to)) ||
+      (candidate.openings !== undefined && (!Array.isArray(candidate.openings) || !candidate.openings.every((opening) =>
+        typeof opening.id === 'string' && typeof opening.wallId === 'string' && candidate.walls!.some((wall) => wall.id === opening.wallId) &&
+        (opening.type === 'door' || opening.type === 'window') && Number.isFinite(opening.position) && opening.position >= 0 && opening.position <= 1 &&
+        Number.isFinite(opening.width) && opening.width >= 50 && opening.width <= 300))) ||
       (candidate.flooring !== undefined && !flooringTypes.includes(candidate.flooring)) ||
       (candidate.comments !== undefined && (!Array.isArray(candidate.comments) || !candidate.comments.every((note) =>
         typeof note.id === 'string' && Number.isFinite(note.x) && Number.isFinite(note.y) && typeof note.text === 'string' && note.text.length <= 500))) ||
@@ -708,9 +813,11 @@
         typeof item.id === 'string' && furnitureTypes.includes(item.type) && Number.isFinite(item.x) && Number.isFinite(item.y) && Number.isFinite(item.rotation) && Number.isFinite(item.scale) && item.scale > 0 &&
         (item.widthScale === undefined || (Number.isFinite(item.widthScale) && item.widthScale > 0)) &&
         (item.lengthScale === undefined || (Number.isFinite(item.lengthScale) && item.lengthScale > 0)) &&
-        (item.color === undefined || /^#[0-9a-f]{6}$/i.test(item.color)) && (item.pattern === undefined || furniturePatterns.includes(item.pattern)))))) return null;
+        (item.color === undefined || /^#[0-9a-f]{6}$/i.test(item.color)) && (item.pattern === undefined || furniturePatterns.includes(item.pattern)) &&
+        (item.material === undefined || materialTypes.includes(item.material)) &&
+        (item.finish === undefined || (item.material !== undefined && item.material !== 'paint' && materialFinishes[item.material]?.some((finish) => finish.id === item.finish))))))) return null;
     const templateId = planTemplates.find((template) => template.id === candidate.templateId)?.id;
-    return { name: candidate.name, vertices: candidate.vertices, walls: candidate.walls, furniture: candidate.furniture ?? [], comments: candidate.comments ?? [], flooring: candidate.flooring ?? 'none', templateId };
+    return { name: candidate.name, vertices: candidate.vertices, walls: candidate.walls, openings: candidate.openings ?? [], furniture: candidate.furniture ?? [], comments: candidate.comments ?? [], flooring: candidate.flooring ?? 'none', templateId };
   }
   async function importJson(event: Event) {
     const file = (event.target as HTMLInputElement).files?.[0];
@@ -735,7 +842,7 @@
       if (event.shiftKey) redo(); else undo();
       return;
     }
-    if (event.key === 'Escape') { drawStart = null; selectedWallId = null; selectedFurnitureId = null; commentEditor = null; showHelp = false; showExport = false; showFurnitureDrawer = false; showSettings = false; showTemplatePicker = false; tool = 'select'; }
+    if (event.key === 'Escape') { drawStart = null; selectedWallId = null; selectedOpeningId = null; selectedFurnitureId = null; commentEditor = null; showHelp = false; showExport = false; showFurnitureDrawer = false; showSettings = false; showTemplatePicker = false; tool = 'select'; }
     if (event.key.toLowerCase() === 'v') setTool('select');
     if (event.key.toLowerCase() === 'w') setTool('wall');
     if (event.key.toLowerCase() === 'c') setTool('comment');
@@ -840,9 +947,17 @@
           {#each plan.walls as wall (wall.id)}
             {@const a = vertex(wall.from)}{@const b = vertex(wall.to)}
             {#if a && b}
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#e2d8c8" stroke-width={wall.thickness + 8} stroke-linecap="round" class="wall-halo" />
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke={selectedWallId === wall.id ? '#736d50' : '#3b3934'} stroke-width={wall.thickness} stroke-linecap="round" class="wall-line" />
-              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" stroke-width="32" class="wall-hit" role="button" tabindex="0" aria-label={`Select wall ${plan.walls.indexOf(wall) + 1}`} onclick={(event) => { event.stopPropagation(); if (tool !== 'select') canvasClick(event); else { selectedWallId = wall.id; selectedFurnitureId = null; showInspector = true; } }} onkeydown={(event) => { if (event.key === 'Enter') { selectedWallId = wall.id; selectedFurnitureId = null; showInspector = true; } }} />
+              {#each wallSegments(a, b, openingsOnWall(wall.id)) as segment}
+                <line x1={segment.x1} y1={segment.y1} x2={segment.x2} y2={segment.y2} stroke="#e2d8c8" stroke-width={wall.thickness + 8} stroke-linecap="butt" class="wall-halo" />
+                <line x1={segment.x1} y1={segment.y1} x2={segment.x2} y2={segment.y2} stroke={selectedWallId === wall.id ? '#736d50' : '#3b3934'} stroke-width={wall.thickness} stroke-linecap="butt" class="wall-line" />
+              {/each}
+              <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" stroke-width="32" class="wall-hit" role="button" tabindex="0" aria-label={`Select wall ${plan.walls.indexOf(wall) + 1}`} onclick={(event) => { event.stopPropagation(); if (tool !== 'select') canvasClick(event); else { selectedWallId = wall.id; selectedOpeningId = null; selectedFurnitureId = null; showInspector = true; } }} onkeydown={(event) => { if (event.key === 'Enter') { selectedWallId = wall.id; selectedOpeningId = null; selectedFurnitureId = null; showInspector = true; } }} />
+              {#each openingsOnWall(wall.id) as opening (opening.id)}
+                <g transform={openingTransform(opening, a, b)} class="wall-opening" class:selected={selectedOpeningId === opening.id} role="button" tabindex="0" aria-label={`${opening.type === 'door' ? 'Door' : 'Window'}, ${Math.round(opening.width)} centimetres wide. Drag to move along wall.`} onpointerdown={(event) => startOpeningDrag(event, opening.id)} onclick={(event) => { event.stopPropagation(); selectedOpeningId = opening.id; selectedWallId = wall.id; selectedFurnitureId = null; showInspector = true; }} onkeydown={(event) => { if (event.key === 'Enter') { selectedOpeningId = opening.id; selectedWallId = wall.id; selectedFurnitureId = null; showInspector = true; } }}>
+                  {@html openingMarkup(opening, distance(a, b))}
+                  <rect x={-openingBounds(opening, distance(a, b)).width / 2} y="-15" width={openingBounds(opening, distance(a, b)).width} height="30" fill="transparent" />
+                </g>
+              {/each}
               {#if showDimensions && distance(a, b) > 0}<g transform={`translate(${(a.x + b.x) / 2 + (b.y - a.y) / distance(a, b) * 27}, ${(a.y + b.y) / 2 - (b.x - a.x) / distance(a, b) * 27})`}><rect x="-29" y="-11" width="58" height="22" rx="6" class="dimension-bg"/><text y="4" text-anchor="middle" class="dimension-text">{meters(length(wall))}</text></g>{/if}
             {/if}
           {/each}
@@ -851,8 +966,8 @@
           {/if}
           {#each plan.furniture as item (item.id)}
             {@const info = furnitureInfo[item.type]}
-            <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${widthScale(item)} ${lengthScale(item)})`} class="furniture-item" role="button" tabindex="0" aria-label={`${info.label}, ${furnitureWidth(item)} by ${furnitureLength(item)} centimetres, drag to move`} onpointerdown={(event) => startFurnitureDrag(event, item.id)} onclick={(event) => { event.stopPropagation(); selectedFurnitureId = item.id; selectedWallId = null; showInspector = true; }} onkeydown={(event) => nudgeFurniture(event, item.id)}>
-              {@html furnitureMarkup(item.type, item.color, item.pattern, item.id)}
+            <g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${widthScale(item)} ${lengthScale(item)})`} class="furniture-item" role="button" tabindex="0" aria-label={`${info.label}, ${furnitureWidth(item)} by ${furnitureLength(item)} centimetres, drag to move`} onpointerdown={(event) => startFurnitureDrag(event, item.id)} onclick={(event) => { event.stopPropagation(); selectedFurnitureId = item.id; selectedWallId = null; selectedOpeningId = null; showInspector = true; }} onkeydown={(event) => nudgeFurniture(event, item.id)}>
+              {@html furnitureArt(item)}
             </g>
           {/each}
           {#each plan.comments as note, index (note.id)}
@@ -879,7 +994,7 @@
           {/if}
           {#if tool === 'wall' && cursor?.vertexId}<circle cx={cursor.x} cy={cursor.y} r="12" fill="none" stroke="#228367" stroke-width="2" stroke-dasharray="3 3" pointer-events="none" />{/if}
           {#if tool === 'wall' && drawStart && cursor}<line x1={drawStart.x} y1={drawStart.y} x2={cursor.x} y2={cursor.y} stroke="#228367" stroke-width="3" stroke-dasharray="8 7" pointer-events="none" /><circle cx={drawStart.x} cy={drawStart.y} r="7" fill="#228367" pointer-events="none" /><circle cx={cursor.x} cy={cursor.y} r="5" fill="white" stroke="#228367" stroke-width="2" pointer-events="none" />{/if}
-          {#if tool === 'furniture' && cursor}<g transform={`translate(${cursor.x} ${cursor.y})`} opacity="0.58" pointer-events="none">{@html furnitureMarkup(placementType)}</g>{/if}
+          {#if tool === 'furniture' && cursor}<g transform={`translate(${cursor.x} ${cursor.y})`} opacity="0.58" pointer-events="none">{@html furniturePreview(placementType, 'placement-preview')}</g>{/if}
           {#if tool === 'comment' && cursor}<g transform={`translate(${cursor.x} ${cursor.y})`} opacity="0.65" pointer-events="none">{@html commentIconMarkup}</g>{/if}
         </svg>
         {#if plan.flooring !== 'none' && floorPolygons.length === 0}
@@ -901,7 +1016,7 @@
             <div class="furniture-choices">
               {#each matchingFurniture as type}
                 {@const info = furnitureInfo[type]}
-                <button class:chosen={tool === 'furniture' && placementType === type} type="button" onpointerdown={(event) => palettePointerDown(event, type)} onclick={(event) => { if (event.detail === 0) chooseFurniture(type); }}><svg class="furniture-choice-picture" viewBox={`${-info.width / 2 - 12} ${-info.height / 2 - 12} ${info.width + 24} ${info.height + 24}`} aria-hidden="true">{@html furnitureMarkup(type, defaultColors[type], 'solid', `picker-${type}`)}</svg><span>{info.label}</span></button>
+                <button class:chosen={tool === 'furniture' && placementType === type} type="button" onpointerdown={(event) => palettePointerDown(event, type)} onclick={(event) => { if (event.detail === 0) chooseFurniture(type); }}><svg class="furniture-choice-picture" viewBox={`${-info.width / 2 - 12} ${-info.height / 2 - 12} ${info.width + 24} ${info.height + 24}`} aria-hidden="true">{@html furniturePreview(type, `picker-${type}`)}</svg><span>{info.label}</span></button>
               {/each}
             </div>
             {#if matchingFurniture.length === 0}<p class="furniture-empty">No furniture matches “{furnitureQuery}”.</p>{/if}
@@ -933,7 +1048,7 @@
           <aside class="inspector"><div class="inspector-heading"><div><span class="eyebrow">PROPERTIES</span><h2>{selectedFurniture ? 'Furniture details' : selectedWall ? 'Wall details' : 'Plan overview'}</h2></div><button class="inspector-close" type="button" aria-label="Close properties" onclick={() => showInspector = false}><X size={17} /></button></div>
             {#if selectedFurniture}
               {@const selectedInfo = furnitureInfo[selectedFurniture.type]}
-              <div class="inspector-section compact-identity"><div class="wall-preview"><svg class="furniture-identity-picture" viewBox={`${-selectedInfo.width / 2 - 10} ${-selectedInfo.height / 2 - 10} ${selectedInfo.width + 20} ${selectedInfo.height + 20}`} role="img" aria-label={`${selectedInfo.label} top view`}>{@html furnitureMarkup(selectedFurniture.type, selectedFurniture.color, selectedFurniture.pattern, `identity-${selectedFurniture.id}`)}</svg><strong>{selectedInfo.label}</strong><small>{selectedFurniture.id.slice(0, 6).toUpperCase()}</small></div></div>
+              <div class="inspector-section compact-identity"><div class="wall-preview"><svg class="furniture-identity-picture" viewBox={`${-selectedInfo.width / 2 - 10} ${-selectedInfo.height / 2 - 10} ${selectedInfo.width + 20} ${selectedInfo.height + 20}`} role="img" aria-label={`${selectedInfo.label} top view`}>{@html furnitureArt(selectedFurniture, `identity-${selectedFurniture.id}`)}</svg><strong>{selectedInfo.label}</strong><small>{selectedFurniture.id.slice(0, 6).toUpperCase()}</small></div></div>
               <div class="inspector-section compact-placement">
                 <div class="property-row"><span>Position</span><strong>{meters(selectedFurniture.x)}, {meters(selectedFurniture.y)}</strong></div>
                 <label class="compact-range" for="furniture-rotation"><span>Rotate</span><input id="furniture-rotation" type="range" min="0" max="359" step="1" value={selectedFurniture.rotation} onchange={(event) => setFurnitureProperty('rotation', event)} /><strong>{selectedFurniture.rotation}°</strong></label>
@@ -941,15 +1056,29 @@
                 <label class="compact-range" for="furniture-length"><span>Length</span><input id="furniture-length" type="range" min={Math.round(selectedInfo.height * 0.4)} max={Math.round(selectedInfo.height * 2.5)} step="1" value={furnitureLength(selectedFurniture)} onchange={(event) => setFurnitureDimension('lengthScale', selectedInfo.height, event)} /><strong>{furnitureLength(selectedFurniture)} cm</strong></label>
               </div>
               <div class="inspector-section compact-finish">
-                <div class="compact-finish-heading"><span class="inspector-label">COLOUR &amp; PATTERN</span><label class="custom-color" for="furniture-color">Custom <input id="furniture-color" type="color" value={selectedFurniture.color ?? defaultColors[selectedFurniture.type]} onchange={(event) => setFurnitureColor(event.currentTarget.value)} /></label></div>
-                <div class="finish-color-row">{#each furnitureColors as color}<button type="button" class:chosen={(selectedFurniture.color ?? defaultColors[selectedFurniture.type]) === color} aria-label={`Choose ${color} colour`} aria-pressed={(selectedFurniture.color ?? defaultColors[selectedFurniture.type]) === color} style:background={color} onclick={() => setFurnitureColor(color)}></button>{/each}</div>
-                <div class="pattern-choices">{#each furniturePatterns as pattern}<button type="button" class:chosen={(selectedFurniture.pattern ?? 'solid') === pattern} aria-pressed={(selectedFurniture.pattern ?? 'solid') === pattern} onclick={() => setFurniturePattern(pattern)}>{pattern === 'check' ? 'Checked' : pattern[0].toUpperCase() + pattern.slice(1)}</button>{/each}</div>
+                <div class="compact-finish-heading"><span class="inspector-label">MATERIAL &amp; FINISH</span>{#if (selectedFurniture.material ?? 'paint') === 'paint'}<label class="custom-color" for="furniture-color">Custom <input id="furniture-color" type="color" value={selectedFurniture.color ?? defaultColors[selectedFurniture.type]} onchange={(event) => setFurnitureColor(event.currentTarget.value)} /></label>{/if}</div>
+                <div class="material-types">{#each materialTypes as material}<button type="button" class:chosen={(selectedFurniture.material ?? 'paint') === material} aria-pressed={(selectedFurniture.material ?? 'paint') === material} onclick={() => setFurnitureMaterial(material)}>{materialLabels[material]}</button>{/each}</div>
+                {#if selectedFurniture.material && selectedFurniture.material !== 'paint'}
+                  <div class="material-finishes">{#each materialFinishes[selectedFurniture.material] as finish}<button type="button" class:chosen={selectedFurniture.finish === finish.id} aria-label={`${finish.label} finish`} aria-pressed={selectedFurniture.finish === finish.id} onclick={() => setFurnitureFinish(finish.id)}><span class="material-swatch" style:background={finish.swatch}></span><span>{finish.label}</span></button>{/each}</div>
+                {:else}
+                  <div class="finish-color-row">{#each furnitureColors as color}<button type="button" class:chosen={(selectedFurniture.color ?? defaultColors[selectedFurniture.type]) === color} aria-label={`Choose ${color} colour`} aria-pressed={(selectedFurniture.color ?? defaultColors[selectedFurniture.type]) === color} style:background={color} onclick={() => setFurnitureColor(color)}></button>{/each}</div>
+                  <div class="pattern-choices">{#each furniturePatterns as pattern}<button type="button" class:chosen={(selectedFurniture.pattern ?? 'solid') === pattern} aria-pressed={(selectedFurniture.pattern ?? 'solid') === pattern} onclick={() => setFurniturePattern(pattern)}>{pattern === 'check' ? 'Checked' : pattern[0].toUpperCase() + pattern.slice(1)}</button>{/each}</div>
+                {/if}
               </div>
               <div class="inspector-section compact-actions"><button class="danger-button" type="button" onclick={deleteSelected}><Trash2 size={15} /> Delete furniture</button></div>
             {:else if selectedWall}
               <div class="inspector-section compact-identity"><div class="wall-preview"><span></span><strong>Wall {plan.walls.findIndex((wall) => wall.id === selectedWallId) + 1}</strong><small>{selectedWall.id.slice(0, 6).toUpperCase()}</small></div></div>
               <div class="inspector-section compact-placement"><div class="compact-metrics"><div><span>Length</span><strong>{meters(length(selectedWall))}</strong></div><div><span>Angle</span><strong>{angle(selectedWall)}°</strong></div><div><span>Thickness</span><strong>{selectedWall.thickness} cm</strong></div></div><label class="compact-range wall-range" for="thickness"><span>Thickness</span><input id="thickness" type="range" min="6" max="40" step="2" value={selectedWall.thickness} onchange={setThickness} /></label></div>
-              <div class="inspector-section compact-actions"><button class="danger-button" type="button" onclick={deleteSelected}><Trash2 size={15} /> Delete wall</button></div>
+              <div class="inspector-section compact-openings"><span class="inspector-label">DOORS &amp; WINDOWS</span><div class="opening-add-row"><button type="button" onclick={() => addOpening('door')} disabled={!fitOpening(length(selectedWall), openingsOnWall(selectedWall.id), 90)}>+ Door</button><button type="button" onclick={() => addOpening('window')} disabled={!fitOpening(length(selectedWall), openingsOnWall(selectedWall.id), 120)}>+ Window</button></div>
+                {#if selectedOpening && selectedOpening.wallId === selectedWall.id}
+                  <div class="opening-detail-heading"><strong>{selectedOpening.type === 'door' ? 'Door' : 'Window'}</strong><button type="button" aria-label={`Delete ${selectedOpening.type}`} onclick={deleteOpening}><Trash2 size={14}/></button></div>
+                  <label class="compact-range" for="opening-width"><span>Width</span><input id="opening-width" type="range" min="50" max={Math.min(240, Math.floor(length(selectedWall) - 20))} step="1" value={selectedOpening.width} onchange={(event) => changeOpening('width', event)}/><strong>{Math.round(selectedOpening.width)} cm</strong></label>
+                  <label class="compact-range" for="opening-position"><span>Position</span><input id="opening-position" type="range" min="0" max="100" step="1" value={Math.round(selectedOpening.position * 100)} onchange={(event) => changeOpening('position', event)}/><strong>{Math.round(selectedOpening.position * 100)}%</strong></label>
+                {:else if openingsOnWall(selectedWall.id).length}
+                  <div class="opening-chips">{#each openingsOnWall(selectedWall.id) as opening}<button type="button" onclick={() => selectedOpeningId = opening.id}>{opening.type === 'door' ? 'Door' : 'Window'} · {Math.round(opening.width)} cm</button>{/each}</div>
+                {/if}
+              </div>
+              <div class="inspector-section compact-actions"><button class="danger-button" type="button" onclick={deleteWall}><Trash2 size={15} /> Delete wall</button></div>
             {:else}
               <div class="inspector-section compact-overview"><strong>{plan.name}</strong><small>Floor plan · Draft</small></div>
               <div class="inspector-section compact-overview-stats"><div class="stat-grid"><div class="stat-card"><span>WALLS</span><strong>{plan.walls.length}</strong></div><div class="stat-card"><span>FURNITURE</span><strong>{plan.furniture.length}</strong></div></div><div class="property-row"><span>Total wall length</span><strong>{meters(totalLength)}</strong></div><div class="property-row"><span>Grid spacing</span><strong>20 cm</strong></div></div>
@@ -986,7 +1115,7 @@
               <span class="template-preview"><svg viewBox={template.viewBox} aria-hidden="true">
                 {#each closedRoomPolygons(template.plan.vertices, template.plan.walls) as points}<polygon {points} fill="#ece5d4" />{/each}
                 {#each template.plan.walls as wall}{@const a = template.plan.vertices.find((point) => point.id === wall.from)}{@const b = template.plan.vertices.find((point) => point.id === wall.to)}{#if a && b}<line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#57554b" stroke-width={wall.thickness + 4} stroke-linecap="round" />{/if}{/each}
-                {#each template.plan.furniture as item}<g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${item.scale})`}>{@html furnitureMarkup(item.type, defaultColors[item.type], 'solid', `${template.id}-${item.id}`)}</g>{/each}
+                {#each template.plan.furniture as item}<g transform={`translate(${item.x} ${item.y}) rotate(${item.rotation}) scale(${item.scale})`}>{@html furnitureArt(item, `${template.id}-${item.id}`)}</g>{/each}
               </svg></span>
               <span class="template-card-copy"><small>{template.type.toUpperCase()}</small><strong>{template.name}</strong><span>{template.description}</span></span>
             </button>
@@ -998,6 +1127,6 @@
   </div>
 {/if}
 
-{#if paletteDrag?.moved}{@const dragInfo = furnitureInfo[paletteDrag.type]}<div class="furniture-drag-ghost" style:left={`${paletteDrag.x + 13}px`} style:top={`${paletteDrag.y + 13}px`}><svg class="furniture-drag-picture" viewBox={`${-dragInfo.width / 2 - 8} ${-dragInfo.height / 2 - 8} ${dragInfo.width + 16} ${dragInfo.height + 16}`} aria-hidden="true">{@html furnitureMarkup(paletteDrag.type, defaultColors[paletteDrag.type], 'solid', 'drag-preview')}</svg><span>{dragInfo.label}</span></div>{/if}
+{#if paletteDrag?.moved}{@const dragInfo = furnitureInfo[paletteDrag.type]}<div class="furniture-drag-ghost" style:left={`${paletteDrag.x + 13}px`} style:top={`${paletteDrag.y + 13}px`}><svg class="furniture-drag-picture" viewBox={`${-dragInfo.width / 2 - 8} ${-dragInfo.height / 2 - 8} ${dragInfo.width + 16} ${dragInfo.height + 16}`} aria-hidden="true">{@html furniturePreview(paletteDrag.type, 'drag-preview')}</svg><span>{dragInfo.label}</span></div>{/if}
 
 {#if showHelp}<div class="modal-backdrop" role="presentation" onpointerdown={(event) => { if (event.target === event.currentTarget) showHelp = false; }}><div class="modal" role="dialog" tabindex="-1" aria-modal="true" aria-label="How to use Forma"><button class="modal-close" aria-label="Close" onclick={() => showHelp = false}><X size={20} /></button><span class="eyebrow">GUIDE</span><h2>Design your space</h2><p>Draw walls by clicking points on the canvas. Wall ends snap together when they are close. Drag a corner onto another corner to join existing walls.</p><ul><li><strong>W</strong> Draw walls at any angle</li><li><strong>Shift</strong> Snap while drawing to 15° increments</li><li><strong>V</strong> Select walls, furniture, and corners</li><li><strong>Drag canvas</strong> Pan on empty space, or hold Space while dragging</li><li><strong>Furniture</strong> Select an item to change its colour and pattern</li><li><strong>Settings</strong> Choose wood or tile flooring</li><li><strong>Delete</strong> Remove the selected item</li><li><strong>⌘/Ctrl + Z</strong> Undo an edit</li></ul><button class="primary-button" onclick={() => showHelp = false}>Got it <ArrowUpRight size={16} /></button></div></div>{/if}
